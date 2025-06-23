@@ -98,9 +98,14 @@ if (comm_backend == 0) then
    options%autotune_transpose_backend = .true.
 endif
 
-! initialize cuDecomp with the config file 
+! create physical grid descriptor 
 CHECK_CUDECOMP_EXIT(cudecompGridDescCreate(handle, grid_desc, config, options))
 
+! create spectral grid descriptor 
+! take previous config and modify the global grid (nx/2+1 instead of nx)
+gdims = [nx/2+1, ny, nz]
+config%gdims = gdims
+CHECK_CUDECOMP_EXIT(cudecompGridDescCreate(handle, grid_descD2Z, config, options))
 
 
 
@@ -112,13 +117,6 @@ if (rank == 0) then
    write(*,"(' Using ', a, ' halo backend ...')") &
             cudecompHaloCommBackendToString(config%halo_comm_backend)
 endif
-
-! create spectral grid descriptor 
-gdims = [nx/2+1, ny, nz]
-config%gdims = gdims
-CHECK_CUDECOMP_EXIT(cudecompGridDescCreate(handle, grid_descD2Z, config, options))
-
-
 
 
 ! Get pencil info for the grid descriptor in the physical space
@@ -364,12 +362,6 @@ endif
 
 
 
-
-inY = 1+halo_ext
-enY = piX%shape(2)-halo_ext
-inZ = 1+halo_ext
-enZ = piX%shape(3)-halo_ext
-
 ! ########################################################################################################################################
 ! START TEMPORAL LOOP: STEP 4 to 9 REPEATED AT EVERY TIME STEP
 ! ########################################################################################################################################
@@ -397,9 +389,9 @@ do t=tstart,tfin
    ! 4.1 RHS computation, no need of halo update in thoery
    ! 4.1.1 Convective term
    !$acc kernels
-   do k = inZ, enZ
-      do j = inY, enY
-            do i=1,nx
+   do k=1+halo_ext, piX%shape(3)-halo_ext
+      do j=1+halo_ext, piX%shape(2)-halo_ext
+         do i=1,nx
                ip=i+1
                jp=j+1
                kp=k+1
@@ -419,8 +411,8 @@ do t=tstart,tfin
    ! 4.1.2 Compute diffusive term 
    gamma=1.0d0*gumax
    !$acc kernels
-   do k = inZ, enZ
-      do j = inY, enY
+   do k=1+halo_ext, piX%shape(3)-halo_ext
+      do j=1+halo_ext, piX%shape(2)-halo_ext
          do i=1,nx
                ip=i+1
                jp=j+1
@@ -453,8 +445,8 @@ do t=tstart,tfin
    ! 4.1.3. Compute Sharpening term (gradien)
    ! Substep 1 computer normals
    !$acc kernels
-   do k = inZ, enZ
-      do j = inY, enY
+   do k=1+halo_ext, piX%shape(3)-halo_ext
+      do j=1+halo_ext, piX%shape(2)-halo_ext
          do i=1,nx
             ip=i+1
             jp=j+1
@@ -502,8 +494,8 @@ do t=tstart,tfin
 
    ! Compute sharpening term
    !$acc kernels
-   do k = inZ, enZ
-      do j = inY, enY
+   do k=1+halo_ext, piX%shape(3)-halo_ext
+      do j=1+halo_ext, piX%shape(2)-halo_ext
             do i=1,nx
                ip=i+1
                jp=j+1
@@ -528,8 +520,8 @@ do t=tstart,tfin
 
    ! 4.2 Get phi at n+1 
    !$acc kernels
-    do k = inZ, enZ
-      do j = inY, enY
+   do k=1+halo_ext, piX%shape(3)-halo_ext
+      do j=1+halo_ext, piX%shape(2)-halo_ext
             do i=1,nx
                 phi(i,j,k) = phi(i,j,k) + dt*rhsphi(i,j,k)
             enddo
@@ -565,8 +557,8 @@ do t=tstart,tfin
    ! 5.1a Convective terms NS
    ! Loop on inner nodes
    !$acc parallel loop collapse(3) private(im,jm,km)
-   do k = inZ, enZ
-      do j = inY, enY
+   do k=1+halo_ext, piX%shape(3)-halo_ext
+      do j=1+halo_ext, piX%shape(2)-halo_ext
          do i=1,nx
             ip=i+1
             jp=j+1
@@ -607,8 +599,8 @@ do t=tstart,tfin
 
    ! 5.1b Compute viscous terms
    !$acc parallel loop collapse(3) private(im,jm,km)
-   do k = inZ, enZ
-      do j = inY, enY
+   do k=1+halo_ext, piX%shape(3)-halo_ext
+      do j=1+halo_ext, piX%shape(2)-halo_ext
          do i=1,nx
             ip=i+1
             jp=j+1
@@ -636,9 +628,9 @@ do t=tstart,tfin
 
    ! 5.1c NS forcing
    !$acc kernels
-   do k = inZ, enZ
+   do k=1+halo_ext, piX%shape(3)-halo_ext
       kg = piX%lo(3) + k - 1 
-      do j = inY, enZ
+      do j=1+halo_ext, piX%shape(2)-halo_ext
          jg = piX%lo(2) + j - 1 
          do i = 1, piX%shape(1)
             ! ABC forcing
@@ -657,8 +649,8 @@ do t=tstart,tfin
    #if phiflag == 1
    !$acc kernels
    !Obtain surface tension forces evaluated at the center of the cell (same as where phi is located)
-   do k = inZ, enZ
-      do j = inY, enY
+   do k=1+halo_ext, piX%shape(3)-halo_ext
+      do j=1+halo_ext, piX%shape(2)-halo_ext
          do i=1,nx
             ip=i+1
             jp=j+1
@@ -696,8 +688,8 @@ do t=tstart,tfin
    
    ! Interpolate force at velocity points
    !$acc kernels
-   do k = inZ, enZ
-      do j = inY, enY
+   do k=1+halo_ext, piX%shape(3)-halo_ext
+      do j=1+halo_ext, piX%shape(2)-halo_ext
          do i=1,nx
             im=i-1
             jm=j-1
@@ -714,8 +706,8 @@ do t=tstart,tfin
 
    ! 5.2 find u, v and w star (explicit Eulero), only in the inner nodes 
    !$acc kernels
-   do k = inZ, enZ
-      do j = inY, enY
+   do k=1+halo_ext, piX%shape(3)-halo_ext
+      do j=1+halo_ext, piX%shape(2)-halo_ext
           do i=1,nx
               ustar(i,j,k) = u(i,j,k) + dt*(alpha*rhsu(i,j,k)-beta*rhsu_o(i,j,k))
               vstar(i,j,k) = v(i,j,k) + dt*(alpha*rhsv(i,j,k)-beta*rhsv_o(i,j,k))
@@ -768,8 +760,8 @@ do t=tstart,tfin
    ! I've done the halo updates so to compute the divergence at the pencil border i have the *star from the halo
    call nvtxStartRange("compute RHS")
    !$acc kernels
-   do k = inZ, enZ
-      do j = inY, enY
+   do k=1+halo_ext, piX%shape(3)-halo_ext
+      do j=1+halo_ext, piX%shape(2)-halo_ext
           do i=1,nx
               ip=i+1
               jp=j+1
@@ -931,8 +923,8 @@ do t=tstart,tfin
    ! 8.3 Call halo exchnages along Y and Z for u,v,w
    ! Correct velocity, pressure has also the halo
    !$acc kernels 
-   do k = inZ, enZ
-      do j = inY, enY
+   do k=1+halo_ext, piX%shape(3)-halo_ext
+      do j=1+halo_ext, piX%shape(2)-halo_ext
          do i = 1, piX%shape(1) ! equal to nx (no halo on x)
               im=i-1
               jm=j-1
@@ -951,8 +943,8 @@ do t=tstart,tfin
    vmean=0.d0
    wmean=0.d0
    !$acc kernels 
-   do k = inZ, enZ
-      do j = inY, enY
+   do k=1+halo_ext, piX%shape(3)-halo_ext
+      do j=1+halo_ext, piX%shape(2)-halo_ext
          do i = 1, piX%shape(1) ! equal to nx (no halo on x)
               umean=umean + u(i,j,k)
               vmean=vmean + v(i,j,k)
