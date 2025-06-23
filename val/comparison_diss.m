@@ -35,7 +35,7 @@ plot(cudec1024ab(:,1),cudec1024ab(:,2),'xm','LineWidth',10.0,'DisplayName','MHIT
 plot(single128ab(:,1),single128ab(:,2),'^r','LineWidth',3.0,'DisplayName','MHIT36 + single + AB + 128^3')
 plot(single256ab(:,1),single256ab(:,2),'sr','LineWidth',7.0,'DisplayName','MHIT36 + single + AB + 256^3')
 plot(single512ab(:,1),single512ab(:,2),'*r','LineWidth',7.0,'DisplayName','MHIT36 + single + AB + 512^3')
-plot(cudec128e(:,1),cudec128e(:,2),'^k','LineWidth',3.0,'DisplayName','MHIT36 +  + Hack1 + 128^3')
+plot(cudec128e(:,1),cudec128e(:,2),'^k','LineWidth',3.0,'DisplayName','MHIT36 + Hack1 + 128^3')
 %plot(cudec256e(:,1),cudec256e(:,2),'sg','LineWidth',10.0,'DisplayName','MHIT36 + Hack1 + 256^3')
 plot(cudec512e(:,1),cudec512e(:,2),'*k','LineWidth',9.0,'DisplayName','MHIT36 + Hack1 + 512^3')
 set(gca,'Fontsize',20)
