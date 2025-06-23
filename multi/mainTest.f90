@@ -27,7 +27,6 @@ integer :: status
 real(8), allocatable :: x(:), kx(:)
 integer :: i,j,k,il,jl,kl,ig,jg,kg,t
 integer :: im,ip,jm,jp,km,kp,last
-integer :: inY,enY,inZ,enZ
 !beginDEBUG
 integer, parameter :: Mx = 1, My = 2, Mz = 1
 !endDEBUG
@@ -42,7 +41,7 @@ real(8), allocatable :: psi_real(:)
 complex(8), device, allocatable :: psi_d(:)
 complex(8), pointer, device, contiguous :: work_d(:), work_halo_d(:), work_d_d2z(:), work_halo_d_d2z(:)
 character(len=40) :: namefile
-character(len=4) :: itcount
+integer :: nbytes
 ! Code variables
 
 real(8)::err,maxErr
@@ -135,18 +134,37 @@ CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_desc, piX_nohalo, 1))
 CHECK_CUDECOMP_EXIT(cudecompGetTransposeWorkspaceSize(handle, grid_desc, nElemWork))
 CHECK_CUDECOMP_EXIT(cudecompGetHaloWorkspaceSize(handle, grid_desc, 1, halo, nElemWork_halo))
 
+! CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_desc, piX_Poiss, 1))
 
 
 
 
 !beginDZ:
+do i=0,ranks
+   ! Print information on configuration
+   if (rank == i) then
+
+      
+   
+      write(*,*) "PiX Shape ",piX%shape(:), "rank",rank
+      write(*,*) "PiY Shape ",piY%shape(:), "rank",rank
+      write(*,*) "PiZ Shape ",piZ%shape(:), "rank",rank
+   
+   
+   
+   endif
+   call MPI_BARRIER(MPI_Comm_World,ierr)
+   end do
+
+
 
 write(*,*) "INFO for D2Z "
 gdims = [nx/2+1, ny, nz]
 config%gdims = gdims
 CHECK_CUDECOMP_EXIT(cudecompGridDescCreate(handle, grid_descD2Z, config, options))
+!endDZ
 
-
+!beingDZ
 CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_descD2Z, piX_d2z, 1,halo))
 nElemX_d2z = piX_d2z%size !<- number of total elments in x-configuratiion (include halo)
 ! Pencil info in Y-configuration present in PiY
@@ -156,12 +174,44 @@ nElemY_d2z = piY_d2z%size
 CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_descD2Z, piZ_d2z, 3))
 nElemZ_d2z = piZ_d2z%size
 
-CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_descD2Z, piX_d2z_nohalo, 1))
+CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_descD2Z, piX_d2z_nohalo, 1))!,halo))
 
 
 ! Get workspace sizes for transpose (1st row)
 CHECK_CUDECOMP_EXIT(cudecompGetTransposeWorkspaceSize(handle, grid_descD2Z, nElemWork_d2z))
-CHECK_CUDECOMP_EXIT(cudecompGetHaloWorkspaceSize(handle, grid_descD2Z, 1, halo, nElemWork_halo_d2z))
+! CHECK_CUDECOMP_EXIT(cudecompGetHaloWorkspaceSize(handle, grid_descD2Z, 1, halo, nElemWork_halo_d2z))
+
+do i=0,ranks
+! Print information on configuration
+if (rank == i) then
+   ! write(*,*) "nelx",nElemX_d2z, "rank",rank
+   ! write(*,*) "nely",nElemY_d2z, "rank",rank
+   ! write(*,*) "nelZ",nElemZ_d2z, "rank",rank
+   
+
+   write(*,*) "PiX Shape Pois",piX_d2z%shape(:), "rank",rank
+   write(*,*) "PiY Shape Pois",piY_d2z%shape(:), "rank",rank
+   write(*,*) "PiZ Shape Pois",piZ_d2z%shape(:), "rank",rank
+
+
+
+endif
+call MPI_BARRIER(MPI_Comm_World,ierr)
+end do
+
+do i=0,ranks
+   ! Print information on configuration
+   if (rank == i) then
+      
+   
+      write(*,*) "PiX No Halo",piX_nohalo%shape(:), "rank",rank
+   
+      write(*,*) "PiX No Halo lo",piX_nohalo%lo(:), "rank",rank
+   
+   endif
+   call MPI_BARRIER(MPI_Comm_World,ierr)
+   end do
+   
 
 ! endDZ
 
@@ -176,17 +226,16 @@ CHECK_CUDECOMP_EXIT(cudecompGetHaloWorkspaceSize(handle, grid_descD2Z, 1, halo, 
 !   write(*,*) "Order in Z-pencil is", piZ%order(1),piZ%order(2),piZ%order(3)
 ! endif
 
-
+! CUFFT initialization -- Create Plans
 ! beginDZ
 
-! CUFFT initialization -- Create Plans
 ! Forward 1D FFT in X: D2Z
-batchSize = piX_d2z%shape(2)*piX_d2z%shape(3) !<- number of FFT (from x-pencil dimension)
+batchSize = piX_d2z_nohalo%shape(2)*piX_d2z_nohalo%shape(3) !<- number of FFT (from x-pencil dimension)
 status = cufftPlan1D(planXf, nx, CUFFT_D2Z, batchSize)
 if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating X plan Forward'
 
 ! Backward 1D FFT in X: Z2D
-batchSize = piX_d2z%shape(2)*piX_d2z%shape(3) !<- number of FFT (from x-pencil dimension)
+batchSize = piX_d2z_nohalo%shape(2)*piX_d2z_nohalo%shape(3) !<- number of FFT (from x-pencil dimension)
 status = cufftPlan1D(planXb, nx, CUFFT_Z2D, batchSize)
 if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating X plan Backward'
 
@@ -194,14 +243,31 @@ if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating X plan Backwa
 ! it's always 2 and 3 because y-pencil have coordinates y,z,x
 batchSize = piY_d2z%shape(2)*piY_d2z%shape(3)
 status = cufftPlan1D(planY, ny, CUFFT_Z2Z, batchSize)
-if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating Y plan Forward & Backward'
+if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating Y plan Forward'
 
 ! it's always 2 and 3 because y-pencil have coordinates z,y,x
 batchSize = piZ_d2z%shape(2)*piZ_d2z%shape(3)
 status = cufftPlan1D(planZ, nz, CUFFT_Z2Z, batchSize)
-if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating Z plan Forward & Backward'
+if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating Z plan Forward'
 
-! endDZ
+
+
+
+
+! ! Create plans (Backward 1D FFT in X: Z2Z)
+! batchSize = piX%shape(2)*piX%shape(3) !<- number of FFT (from x-pencil dimension)
+! status = cufftPlan1D(planXb, nx, CUFFT_Z2Z, batchSize)
+! if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating X plan Backward'
+
+! ! it's always 2 and 3 because y-pencil have coordinates y,z,x
+! batchSize = piY%shape(2)*piY%shape(3)
+! status = cufftPlan1D(planY, ny, CUFFT_Z2Z, batchSize)
+! if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating Y plan'
+
+! ! it's always 2 and 3 because y-pencil have coordinates z,y,x
+! batchSize = piZ%shape(2)*piZ%shape(3)
+! status = cufftPlan1D(planZ, nz, CUFFT_Z2Z, batchSize)
+! if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating Z plan'
 
 ! define grid
 allocate(x(nx),kx(nx))
@@ -233,11 +299,17 @@ allocate(kx_d, source=kx)
 allocate(psi(max(nElemX, nElemY, nElemZ))) !largest among the pencil
 allocate(psi_real(max(nElemX, nElemY, nElemZ))) !largest among the pencil
 allocate(psi_d(max(nElemX_d2z, nElemY_d2z, nElemZ_d2z))) ! phi on device
+! allocate(psi_real_d, mold=psi) ! phi on device
 allocate(ua(nx, piX%shape(2), piX%shape(3)))
-
+allocate(uaa(piX_nohalo%shape(1), piX_nohalo%shape(2), piX_nohalo%shape(3)))
 ! Pressure variable
+! allocate(rhsp_complex(piX%shape(1), piX%shape(2), piX%shape(3)))
 allocate(rhsp(piX%shape(1), piX%shape(2), piX%shape(3))) 
 allocate(p(piX%shape(1), piX%shape(2), piX%shape(3))) 
+
+ allocate(rhspp(piX_nohalo%shape(1), piX_nohalo%shape(2), piX_nohalo%shape(3))) 
+ allocate(pp(piX_nohalo%shape(1), piX_nohalo%shape(2), piX_nohalo%shape(3))) 
+! allocate(p(piX%shape(1), piX%shape(2), piX%shape(3))) 
 
 !allocate variables
 !NS variables
@@ -286,8 +358,8 @@ if (rank.eq.0) write(*,*) "Initialize velocity field (fresh start)"
          do j = 1+halo_ext, piX%shape(2)-halo_ext
             jg = piX%lo(2) + j - 1 
             do i = 1, piX%shape(1)
-               u(i,j,k) =   sin(x(i)-dx/2)*cos(x(jg))*cos(x(kg))
-               v(i,j,k) =  -cos(x(i))*sin(x(jg)-dx/2)*cos(x(kg))
+               u(i,j,k) =   sin(x(i))*cos(x(jg))*cos(x(kg))
+               v(i,j,k) =  -cos(x(i))*sin(x(jg))*cos(x(kg))
                w(i,j,k) =  0.d0
             enddo
          enddo
@@ -376,10 +448,7 @@ endif
 
 
 
-inY = 1+halo_ext
-enY = piX%shape(2)-halo_ext
-inZ = 1+halo_ext
-enZ = piX%shape(3)-halo_ext
+
 
 ! ########################################################################################################################################
 ! START TEMPORAL LOOP: STEP 4 to 9 REPEATED AT EVERY TIME STEP
@@ -392,10 +461,6 @@ tstart=tstart+1
 gamma=1.d0*gumax
 ! Start temporal loop
 do t=tstart,tfin
-    ! Create custom label for each marker
-    write(itcount,'(i4)') t
-    ! Range with custom  color
-    call nvtxStartRange("Iteration "//itcount,t)
 
     if (rank.eq.0) write(*,*) "Time step",t,"of",tfin
     call cpu_time(times)
@@ -408,8 +473,8 @@ do t=tstart,tfin
    ! 4.1 RHS computation, no need of halo update in thoery
    ! 4.1.1 Convective term
    !$acc kernels
-   do k = inZ, enZ
-      do j = inY, enY
+   do k=1+halo_ext, piX%shape(3)-halo_ext
+      do j=1+halo_ext, piX%shape(2)-halo_ext
             do i=1,nx
                ip=i+1
                jp=j+1
@@ -430,8 +495,8 @@ do t=tstart,tfin
    ! 4.1.2 Compute diffusive term 
    gamma=1.0d0*gumax
    !$acc kernels
-   do k = inZ, enZ
-      do j = inY, enY
+   do k=1+halo_ext, piX%shape(3)-halo_ext
+      do j=1+halo_ext, piX%shape(2)-halo_ext
          do i=1,nx
                ip=i+1
                jp=j+1
@@ -464,8 +529,8 @@ do t=tstart,tfin
    ! 4.1.3. Compute Sharpening term (gradien)
    ! Substep 1 computer normals
    !$acc kernels
-   do k = inZ, enZ
-      do j = inY, enY
+   do k=1+halo_ext, piX%shape(3)-halo_ext
+      do j=1+halo_ext, piX%shape(2)-halo_ext
          do i=1,nx
             ip=i+1
             jp=j+1
@@ -513,8 +578,8 @@ do t=tstart,tfin
 
    ! Compute sharpening term
    !$acc kernels
-   do k = inZ, enZ
-      do j = inY, enY
+   do k=1+halo_ext, piX%shape(3)-halo_ext
+      do j=1+halo_ext, piX%shape(2)-halo_ext
             do i=1,nx
                ip=i+1
                jp=j+1
@@ -539,8 +604,8 @@ do t=tstart,tfin
 
    ! 4.2 Get phi at n+1 
    !$acc kernels
-    do k = inZ, enZ
-      do j = inY, enY
+   do k=1+halo_ext, piX%shape(3)-halo_ext
+      do j=1+halo_ext, piX%shape(2)-halo_ext
             do i=1,nx
                 phi(i,j,k) = phi(i,j,k) + dt*rhsphi(i,j,k)
             enddo
@@ -564,7 +629,10 @@ do t=tstart,tfin
 
 
 
-   call nvtxStartRange("Projection")
+
+
+
+
    !########################################################################################################################################
    ! START STEP 5: USTAR COMPUTATION (PROJECTION STEP)
    !########################################################################################################################################
@@ -576,8 +644,8 @@ do t=tstart,tfin
    ! 5.1a Convective terms NS
    ! Loop on inner nodes
    !$acc parallel loop collapse(3) private(im,jm,km)
-   do k = inZ, enZ
-      do j = inY, enY
+   do k=1+halo_ext, piX%shape(3)-halo_ext
+      do j=1+halo_ext, piX%shape(2)-halo_ext
          do i=1,nx
             ip=i+1
             jp=j+1
@@ -618,8 +686,8 @@ do t=tstart,tfin
 
    ! 5.1b Compute viscous terms
    !$acc parallel loop collapse(3) private(im,jm,km)
-   do k = inZ, enZ
-      do j = inY, enY
+   do k=1+halo_ext, piX%shape(3)-halo_ext
+      do j=1+halo_ext, piX%shape(2)-halo_ext
          do i=1,nx
             ip=i+1
             jp=j+1
@@ -647,9 +715,9 @@ do t=tstart,tfin
 
    ! 5.1c NS forcing
    !$acc kernels
-   do k = inZ, enZ
+   do k = 1+halo_ext, piX%shape(3)-halo_ext
       kg = piX%lo(3) + k - 1 
-      do j = inY, enZ
+      do j = 1+halo_ext, piX%shape(2)-halo_ext
          jg = piX%lo(2) + j - 1 
          do i = 1, piX%shape(1)
             ! ABC forcing
@@ -668,8 +736,8 @@ do t=tstart,tfin
    #if phiflag == 1
    !$acc kernels
    !Obtain surface tension forces evaluated at the center of the cell (same as where phi is located)
-   do k = inZ, enZ
-      do j = inY, enY
+   do k=1+halo_ext, piX%shape(3)-halo_ext
+      do j=1+halo_ext, piX%shape(2)-halo_ext
          do i=1,nx
             ip=i+1
             jp=j+1
@@ -707,8 +775,8 @@ do t=tstart,tfin
    
    ! Interpolate force at velocity points
    !$acc kernels
-   do k = inZ, enZ
-      do j = inY, enY
+   do k=1+halo_ext, piX%shape(3)-halo_ext
+      do j=1+halo_ext, piX%shape(2)-halo_ext
          do i=1,nx
             im=i-1
             jm=j-1
@@ -725,8 +793,8 @@ do t=tstart,tfin
 
    ! 5.2 find u, v and w star (explicit Eulero), only in the inner nodes 
    !$acc kernels
-   do k = inZ, enZ
-      do j = inY, enY
+   do k=1+halo_ext, piX%shape(3)-halo_ext
+      do j=1+halo_ext, piX%shape(2)-halo_ext
           do i=1,nx
               ustar(i,j,k) = u(i,j,k) + dt*(alpha*rhsu(i,j,k)-beta*rhsu_o(i,j,k))
               vstar(i,j,k) = v(i,j,k) + dt*(alpha*rhsv(i,j,k)-beta*rhsv_o(i,j,k))
@@ -762,7 +830,7 @@ do t=tstart,tfin
    !########################################################################################################################################
    ! END STEP 5: USTAR COMPUTATION 
    !########################################################################################################################################
-   call nvtxEndRange
+
 
 
 
@@ -777,55 +845,106 @@ do t=tstart,tfin
    ! initialize rhs and analytical solution
    ! 6.1 Compute rhs of Poisson equation div*ustar: divergence at the cell center 
    ! I've done the halo updates so to compute the divergence at the pencil border i have the *star from the halo
-   call nvtxStartRange("compute RHS")
-   !$acc kernels
-   do k = inZ, enZ
-      do j = inY, enY
-          do i=1,nx
-              ip=i+1
-              jp=j+1
-              kp=k+1
-              if (ip > nx) ip=1
-              rhsp(i,j,k) =               (rho*dxi/dt)*(ustar(ip,j,k)-ustar(i,j,k))
-              rhsp(i,j,k) = rhsp(i,j,k) + (rho*dxi/dt)*(vstar(i,jp,k)-vstar(i,j,k))
-              rhsp(i,j,k) = rhsp(i,j,k) + (rho*dxi/dt)*(wstar(i,j,kp)-wstar(i,j,k))
-          enddo
-      enddo
-   enddo
-   !$acc end kernels
+
+   ! !$acc kernels
+   ! do k=1+halo_ext, piX%shape(3)-halo_ext
+   !    do j=1+halo_ext, piX%shape(2)-halo_ext
+   !        do i=1,nx
+   !            ip=i+1
+   !            jp=j+1
+   !            kp=k+1
+   !            if (ip > nx) ip=1
+   !            rhsp(i,j,k) =               (rho*dxi/dt)*(ustar(ip,j,k)-ustar(i,j,k))
+   !            rhsp(i,j,k) = rhsp(i,j,k) + (rho*dxi/dt)*(vstar(i,jp,k)-vstar(i,j,k))
+   !            rhsp(i,j,k) = rhsp(i,j,k) + (rho*dxi/dt)*(wstar(i,j,kp)-wstar(i,j,k))
+   !        enddo
+   !    enddo
+   ! enddo
+   ! !$acc end kernels
 
    ! ! !beginDEBUG
    ! !$acc kernels
    ! rhsp=0.0d0
+   ! rhspp=0.0d0
    ! !$acc end kernels
 
-   ! !$acc kernels
-   ! do kl = 1 + halo_ext , piX%shape(3)-halo_ext 
-   !    kg = piX%lo(3)  + kl - 1
-   !    do jl = 1 + halo_ext  , piX%shape(2) -halo_ext  
-   !       jg = piX%lo(2) + jl - 1 
+   !$acc kernels
+   do kl = 1 , piX_nohalo%shape(3) 
+      kg = piX_nohalo%lo(3) + kl - 1
+      do jl = 1 , piX_nohalo%shape(2) 
+         jg = piX_nohalo%lo(2) + jl - 1 
+         do i = 1, nx
+            ! rhspp(i,jl,kl) = sin(Mx*(x(i)+dx/2.0d0))*sin(My*(x(jg)+dx/2.0d0))*sin(Mz*(x(kg)+dx/2.0d0))
+            rhspp(i,jl,kl) = sin(Mx*(x(i)))*sin(My*(x(jg)))*sin(Mz*(x(kg)))
+            uaa(i,jl,kl) = -rhspp(i,jl,kl)/(Mx**2 + My**2 + Mz**2)
+            pp(i,jl,kl) = 50.d0
+         enddo
+      enddo
+   enddo
+   !$acc end kernels
+
+
+   ! !endDEBUG
+
+
+   ! do kl = 1+halo_ext, piX%shape(3)-halo_ext
+   !    do jl = 1+halo_ext, piX%shape(2)-halo_ext
    !       do i = 1, nx
-   !          ! rhsp(i,jl,kl) = sin(Mx*(x(i)+dx/2.0d0))*sin(My*(x(jg)+dx/2.0d0))*sin(Mz*(x(kg)+dx/2.0d0))
-   !          rhsp(i,jl,kl) = sin(Mx*(x(i)))*sin(My*(x(jg)))*sin(Mz*(x(kg)))
+   !          rhsp(i,jl,kl) = rhspp(i,jl-halo_ext,kl-halo_ext)
    !          ua(i,jl,kl) = -rhsp(i,jl,kl)/(Mx**2 + My**2 + Mz**2)
+   !       enddo
+   !    enddo
+   ! enddo
+ 
+   ! !endDEBUG
+
+
+   !DZ: Remove this, not necessary for D2Z transforms
+   ! ! Feed rhsp into the Poisson solver, this part can be optimized in the future (less copies of arrays)
+   ! !$acc kernels
+   ! do kl = 1+halo_ext, piX%shape(3)-halo_ext
+   !    !kg = piX%lo(3) + kl - 1 
+   !    do jl = 1+halo_ext, piX%shape(2)-halo_ext
+   !       !jg = piX%lo(2) + jl - 1 
+   !       do i = 1, piX%shape(1)
+   !          rhsp_complex(i,jl,kl) = cmplx(rhsp(i,jl,kl),0.0) !<- use this once solver is ok
+   !          !For Poisson testing (knwon solutions)
+   !          !rhsp_complex(i,jl,kl) = cmplx(sin(Mx*x(i)),0.0) 
+   !          !rhsp_complex(i,jl,kl) = cmplx(sin(Mx*x(i))*sin(My*x(jg))*sin(Mz*x(kg)),0.0)  ! RHS of Poisson equation
    !       enddo
    !    enddo
    ! enddo
    ! !$acc end kernels
 
+   ! do the FFT3D forward 
+   ! psi(x,y,z) -> psi(kx,y,z)
+   ! !$acc host_data use_device(rhsp_complex)
+   ! status = cufftExecZ2Z(planX, rhsp_complex, psi_d, CUFFT_FORWARD)
+   ! if (status /= CUFFT_SUCCESS) write(*,*) 'X forward error: ', status
+   ! !$acc end host_data
 
-   ! !endDEBUG
-
-   !$acc host_data use_device(rhsp)
-   status = cufftExecD2Z(planXf, rhsp, psi_d)
+   !$acc host_data use_device(rhspp)
+   status = cufftExecD2Z(planXf, rhspp, psi_d)
    if (status /= CUFFT_SUCCESS) write(*,*) 'X forward error: ', status
    !$acc end host_data
 
-   !!Nyquist to be set to zero?
+   ! block
+   !    complex(8), device, pointer :: p3(:,:,:)
+   !    call c_f_pointer(c_devloc(psi_d), p3, piX_d2z_nohalo%shape)  ! view
+   !    !$acc kernels
+   !    do k = 1, piX_d2z_nohalo%shape(3)
+   !       do j = 1, piX_d2z_nohalo%shape(2)
+   !          p3(nx/2+1, j, k) = (0.0_8, 0.0_8)
+   !       end do
+   !    end do
+   !    !$acc end kernels
+   ! end block
+
    ! block
    !    complex(8), device, pointer :: psi_dev(:,:,:)
    !    call c_f_pointer( c_devloc(psi_d), psi_dev,                       &
    !                       [piX_d2z%shape(1), piX_d2z%shape(2), piX_d2z%shape(3)] )
+   
    !    !$acc kernels
    !    do k = 1, piX_d2z%shape(3)
    !       do j = 1, piX_d2z%shape(2)
@@ -837,20 +956,37 @@ do t=tstart,tfin
 
 
    ! psi(kx,y,z) -> psi(y,z,kx)
-   CHECK_CUDECOMP_EXIT(cudecompTransposeXToY(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX,piX_d2z%halo_extents, [0,0,0]))
+   CHECK_CUDECOMP_EXIT(cudecompTransposeXToY(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX))!,piX_d2z%halo_extents, [0,0,0]))
    ! psi(y,z,kx) -> psi(ky,z,kx)
    status = cufftExecZ2Z(planY, psi_d, psi_d, CUFFT_FORWARD)
    if (status /= CUFFT_SUCCESS) write(*,*) 'Y forward error: ', status
    ! psi(ky,z,kx) -> psi(z,kx,ky)
-   CHECK_CUDECOMP_EXIT(cudecompTransposeYToZ(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX)) 
+   CHECK_CUDECOMP_EXIT(cudecompTransposeYToZ(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX))!,[0,0,0],[0,0,0]))
    ! psi(z,kx,ky) -> psi(kz,kx,ky)
    status = cufftExecZ2Z(planZ, psi_d, psi_d, CUFFT_FORWARD)
    if (status /= CUFFT_SUCCESS) write(*,*) 'Z forward error: ', status
    ! END of FFT3D forward
-   call nvtxEndRange
+   
+   ! psi(1:piZ_d2z%shape(1)*piZ_d2z%shape(2)*piZ_d2z%shape(3)) = psi_d(1:piZ_d2z%shape(1)*piZ_d2z%shape(2)*piZ_d2z%shape(3))
+   ! ! nbytes = piZ_d2z%shape(3)*piZ_d2z%shape(3)*piZ_d2z%shape(3)*c_sizeof((0.0_8,0.0_8))
+
+   ! ! !$acc host_data use_device(psi_d)              ! expose CUdeviceptr
+   ! !    ierr = acc_memcpy_from_device(psi, psi_d, nbytes)
+   ! ! !$acc end host_data
+   ! ! if (ierr /= 0) stop "acc_memcpy_from_device failed"
+   
+   ! !-----------------------------------------------------------------
+   ! ! 2️  Dump the host array to disk
+   ! !-----------------------------------------------------------------
+   ! write(namefile,'("psi_",I3.3,".dat")') rank
+   ! open(unit=55, file=namefile, form='unformatted', &
+   !      access='stream', status='replace')
+   ! write(55) psi(1:piZ_d2z%shape(1)*piZ_d2z%shape(2)*piZ_d2z%shape(3))                 ! <-- host memory ⇒ legal I/O
+   ! close(55)
+
 
    block
-    complex(8), device, pointer :: phi3d(:,:,:)
+   complex(8), device, pointer :: phi3d(:,:,:)
     real(8) :: k2
     integer :: il, jl, ig, jg
     integer :: offsets(3), xoff, yoff
@@ -871,9 +1007,6 @@ do t=tstart,tfin
     yoff = offsets(2)
     npx = np(1)
     npy = np(2)
-
-    call nvtxStartRange("Solution")
-
     !$acc kernels
     do jl = 1, npy
       jg = yoff + jl
@@ -885,42 +1018,186 @@ do t=tstart,tfin
           enddo
        enddo
     enddo
-    !$acc end kernels
-
-    call nvtxEndRange
-
-   
+   !$acc end kernels
     ! specify mean (corrects division by zero wavenumber above)
     if (xoff == 0 .and. yoff == 0) phi3d(1,1,1) = 0.0
+
+
+
+
+   !  !$acc kernels
+   !  do jl = 1, piZ_d2z%shape(3)
+   !     do il = 1, piZ_d2z%shape(2)
+   !        do k = 1, piZ_d2z%shape(1)
+   !          phi3d(k,il,jl) = phi3d(k,il,jl)/(int(nx,8)*int(nx,8)*int(nx,8))
+   !        enddo
+   !     enddo
+   !  enddo
+   !  !$acc end kernels
+
+
      
    end block
+  
+   !DZ: A lot of memory management here -- Why?
 
-   call nvtxStartRange("FFT backwards w/ transpositions")
    ! psi(kz,kx,ky) -> psi(z,kx,ky)
    status = cufftExecZ2Z(planZ, psi_d, psi_d, CUFFT_INVERSE)
    if (status /= CUFFT_SUCCESS) write(*,*) 'Z inverse error: ', status
    ! psi(z,kx,ky) -> psi(ky,z,kx)
-   CHECK_CUDECOMP_EXIT(cudecompTransposeZToY(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX))
+   CHECK_CUDECOMP_EXIT(cudecompTransposeZToY(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX))!,[0,0,0],[0,0,0]))
    ! psi(ky,z,kx) -> psi(y,z,kx)
    status = cufftExecZ2Z(planY, psi_d, psi_d, CUFFT_INVERSE)
    if (status /= CUFFT_SUCCESS) write(*,*) 'Y inverse error: ', status
    ! psi(y,z,kx) -> psi(kx,y,z)
-   CHECK_CUDECOMP_EXIT(cudecompTransposeYToX(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX,[0,0,0], piX_d2z%halo_extents))
-   !$acc host_data use_device(p)
-    ! psi(kx,y,z) -> psi(x,y,z)
-    status = cufftExecZ2D(planXb, psi_d, p)
-    if (status /= CUFFT_SUCCESS) write(*,*) 'X inverse error: ', status
+   CHECK_CUDECOMP_EXIT(cudecompTransposeYToX(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX))!,[0,0,0], piX_d2z%halo_extents))
+   !$acc host_data use_device(pp)
+   ! psi(kx,y,z) -> psi(x,y,z)
+   status = cufftExecZ2D(planXb, psi_d, pp)
+   if (status /= CUFFT_SUCCESS) write(*,*) 'X inverse error: ', status
    !$acc end host_data
 
-   !$acc host_data use_device(p)
-    ! update halo nodes with pressure (needed for the pressure correction step), using device variable no need to use host-data
-    ! Update X-pencil halos in Y and Z direction
-    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, p, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
-    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, p, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
-   !$acc end host_data 
+   !  ! update halo nodes with pressure (needed for the pressure correction step), using device variable no need to use host-data
+   ! ! Update X-pencil halos in Y and Z direction
+   ! CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, psi_d, work_halo_d, CUDECOMP_DOUBLE_COMPLEX, piX%halo_extents, halo_periods, 2))
+   ! CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, psi_d, work_halo_d, CUDECOMP_DOUBLE_COMPLEX, piX%halo_extents, halo_periods, 3))
+
+   
+   !  ! update halo nodes with pressure (needed for the pressure correction step), using device variable no need to use host-data
+   ! ! Update X-pencil halos in Y and Z direction
+   ! CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, p, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
+   ! CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, p, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
+
 
    
 
+   err=0.d0
+   maxErr=-1.d0
+
+   ! do k=1+halo_ext, piX%shape(3)-halo_ext
+   !    do j=1+halo_ext, piX%shape(2)-halo_ext
+   !        do i=1,nx
+   !          ! err = abs(rhsp(i,j,k)-p(i,j,k)/(int(nx,8)*int(ny,8)*int(nz,8)))
+   !          err = abs(ua(i,j,k)-p(i,j,k))
+   !          ! err = abs(rhsp(i,j,k)-p(i,j,k))!)/(int(nx,8)*int(ny,8)*int(nz,8)))
+
+   !          if (err > maxErr) maxErr = err
+   !        enddo
+   !    enddo
+   ! enddo
+
+   !$acc kernels
+   do k=1, piX_nohalo%shape(3)
+      do j=1, piX_nohalo%shape(2)
+          do i=1, piX_nohalo%shape(1)
+            ! err = abs(rhsp(i,j,k)-p(i,j,k)/(int(nx,8)*int(ny,8)*int(nz,8)))
+            err = abs(uaa(i,j,k)-pp(i,j,k))
+            ! err = abs(rhspp(i,j,k)-(pp(i,j,k))/(nx*ny*nz))
+            ! err = abs(rhspp(i,j,k)-pp(i,j,k))
+            ! err = abs(rhsp(i,j,k)-p(i,j,k))!)/(int(nx,8)*int(ny,8)*int(nz,8)))
+
+            if (err > maxErr) maxErr = err
+          enddo
+      enddo
+   enddo
+   !$acc end kernels
+
+
+
+   write(*,"(' [', i0, '] Max Error: ', e12.6)") rank, maxErr
+
+
+
+   
+   ! pp(1:piZ_d2z%shape(1)*piZ_d2z%shape(2)*piZ_d2z%shape(3)) = psi_d(1:piZ_d2z%shape(1)*piZ_d2z%shape(2)*piZ_d2z%shape(3))
+   ! nbytes = piZ_d2z%shape(3)*piZ_d2z%shape(3)*piZ_d2z%shape(3)*c_sizeof((0.0_8,0.0_8))
+
+   ! !$acc host_data use_device(psi_d)              ! expose CUdeviceptr
+   !    ierr = acc_memcpy_from_device(psi, psi_d, nbytes)
+   ! !$acc end host_data
+   ! if (ierr /= 0) stop "acc_memcpy_from_device failed"
+   
+   !-----------------------------------------------------------------
+   ! 2️  Dump the host array to disk
+   !-----------------------------------------------------------------
+   write(namefile,'("pp_",I3.3,".dat")') rank
+   open(unit=55, file=namefile, form='unformatted', &
+        access='stream', status='replace')
+   write(55) pp(1:piX_nohalo%shape(1),1:piX_nohalo%shape(2),1:piX_nohalo%shape(3))                 ! <-- host memory ⇒ legal I/O
+   close(55)
+
+
+   ! ! check against analytical solution
+   ! block
+   ! real(8), pointer :: psi3(:,:,:)
+   ! real(8) :: err, maxErr = -1.0, err2
+   ! call c_f_pointer(c_loc(psi_real), psi3, [piX%shape(1), piX%shape(2), piX%shape(3)])
+
+
+
+
+   ! ! ! take back p from psi3
+   ! ! ! i can span also the halo because they have been already updated
+   ! ! !$acc kernels
+   ! ! do kl = 1, piX%shape(3)
+   ! !    do jl = 1, piX%shape(2)
+   ! !       do i = 1, piX%shape(1)
+   ! !          p(i,jl,kl) = psi3(i,jl,kl)
+   ! !       enddo
+   ! !    enddo
+   ! ! enddo
+   ! ! !$acc end kernels
+
+
+   !  do k=1+halo_ext, piX%shape(3)-halo_ext
+   !    do j=1+halo_ext, piX%shape(2)-halo_ext
+   !          do i=1,nx
+   !             err = abs(rhsp(i,j,k)-psi3(i,j,k))
+   !             if (err > maxErr) maxErr = err
+   !          enddo
+   !      enddo
+   ! enddo
+
+    
+   ! ! write(*,"(' [', i0, '] Max Error: ', e12.6)") rank, maxErr
+   ! end block
+
+
+
+   ! !D2H transfer
+   ! psi = psi_d
+
+
+   ! ! check against analytical solution
+   ! block
+   ! complex(8), pointer :: psi3(:,:,:)
+   ! real(8) :: err, maxErr = -1.0, err2
+   ! call c_f_pointer(c_loc(psi), psi3, [piX%shape(1), piX%shape(2), piX%shape(3)])
+
+   ! !!Check errro on complex (ua and psi3 are complex)
+   ! !do kl = 1, piX%shape(3)
+   ! !   do jl = 1, piX%shape(2)
+   ! !      do i = 1, piX%shape(1)
+   ! !         err = abs(ua(i,jl,kl)-psi3(i,jl,kl))
+   ! !         if (err > maxErr) maxErr = err
+   ! !      enddo
+   ! !   enddo
+   ! !enddo
+
+   ! ! take back p from psi3
+   ! ! i can span also the halo because they have been already updated
+   ! !$acc kernels
+   ! do kl = 1, piX%shape(3)
+   !    do jl = 1, piX%shape(2)
+   !       do i = 1, piX%shape(1)
+   !          p(i,jl,kl) = real(psi3(i,jl,kl))
+   !       enddo
+   !    enddo
+   ! enddo
+   ! !$acc end kernels
+
+   ! !write(*,"(' [', i0, '] Max Error: ', e12.6)") rank, maxErr
+   ! end block
 
    !########################################################################################################################################
    ! END STEP 7: POISSON SOLVER FOR PRESSURE
@@ -933,7 +1210,7 @@ do t=tstart,tfin
 
 
 
-   call nvtxStartRange("Correction")
+
    !########################################################################################################################################
    ! START STEP 8: VELOCITY CORRECTION
    ! ########################################################################################################################################
@@ -942,8 +1219,8 @@ do t=tstart,tfin
    ! 8.3 Call halo exchnages along Y and Z for u,v,w
    ! Correct velocity, pressure has also the halo
    !$acc kernels 
-   do k = inZ, enZ
-      do j = inY, enY
+   do k = 1+halo_ext, piX%shape(3)-halo_ext
+      do j = 1+halo_ext, piX%shape(2)-halo_ext
          do i = 1, piX%shape(1) ! equal to nx (no halo on x)
               im=i-1
               jm=j-1
@@ -962,8 +1239,8 @@ do t=tstart,tfin
    vmean=0.d0
    wmean=0.d0
    !$acc kernels 
-   do k = inZ, enZ
-      do j = inY, enY
+   do k = 1+halo_ext, piX%shape(3)-halo_ext
+      do j = 1+halo_ext, piX%shape(2)-halo_ext
          do i = 1, piX%shape(1) ! equal to nx (no halo on x)
               umean=umean + u(i,j,k)
               vmean=vmean + v(i,j,k)
@@ -1016,18 +1293,13 @@ do t=tstart,tfin
       if (cou .gt. 7) stop
    endif
 
-   ! beginDZ
-   ! CHECK - To be removed in actual computation
-
-   ! endDZ
-
-
    call cpu_time(timef)
    if (rank.eq.0) print '(" Time elapsed = ",f6.1," ms")',1000*(timef-times)
    !########################################################################################################################################
    ! END STEP 8: VELOCITY CORRECTION  
    !########################################################################################################################################
-   call nvtxEndRange
+
+
 
 
    !########################################################################################################################################
@@ -1050,7 +1322,6 @@ do t=tstart,tfin
    !########################################################################################################################################
 
 
-call nvtxEndRange
 enddo
 
 ! Remove allocated variables (add new)

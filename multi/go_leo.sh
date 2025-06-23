@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --account="IscrB_SONORA"
+#SBATCH --account="tra25_openhack"
 #SBATCH --job-name="cudec"
 #SBATCH --time=00:30:00
 #SBATCH --nodes=1      ##adjust
@@ -22,3 +22,5 @@ export LD_LIBRARY_PATH=$ROOT_DIR:$LD_LIBRARY_PATH
 
 
 mpirun -n 4 ./mhit36
+# mpirun -n 4 nsys profile --trace=cuda,nvtx,mpi -o profile_output_%q{SLURM_PROCID} --stats=true ./mhit36
+

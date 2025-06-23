@@ -1,5 +1,5 @@
 module param
-    integer, parameter :: nx=128
+    integer, parameter :: nx=256
     integer :: ny=nx,nz=nx
     double precision :: pi,lx,dx,dxi,ddxi,rhoi,twopi
     integer :: restart,tstart,tfin,dump
@@ -23,15 +23,18 @@ module cudecompvar
    use cudecomp
    integer :: npx, npy, npz
    type(cudecompHandle) :: handle
-   type(cudecompGridDesc) :: grid_desc
+   type(cudecompGridDesc) :: grid_desc,grid_descD2Z
    type(cudecompGridDescConfig) :: config
    type(cudecompGridDescAutotuneOptions) :: options
    integer :: pdims(2) ! pr x pc pencils
    integer :: gdims(3) ! global grid dimensions
    integer :: halo(3) ! halo extensions
    integer :: halo_ext ! 0 no halo, 1 means 1 halo
-   type(cudecompPencilInfo) :: piX, piY, piZ  ! size of the pencils in x- y- and z-configuration
-   integer(8) :: nElemX, nElemY, nElemZ, nElemWork, nElemWork_halo
+   type(cudecompPencilInfo) :: piX, piY, piZ , piX_nohalo! size of the pencils in x- y- and z-configuration
+   type(cudecompPencilInfo) :: piX_d2z, piY_d2z, piZ_d2z,piX_d2z_nohalo  ! size of the pencils in x- y- and z-configuration for D2Z
+   type(cudecompPencilInfo) :: piX_Poiss
+   integer(8) :: nElemX, nElemY, nElemZ, nElemWork, nElemWork_halo,nElemWork_halo_d2z
+   integer(8) :: nElemX_d2z, nElemY_d2z, nElemZ_d2z, nElemWork_d2z
    logical :: halo_periods(3)
 end module cudecompvar
 
@@ -43,6 +46,7 @@ module velocity
    double precision, allocatable :: rhsu_o(:,:,:), rhsv_o(:,:,:), rhsw_o(:,:,:)
    complex(8), allocatable :: rhsp_complex(:,:,:)
    double precision, allocatable :: rhsp(:,:,:), p(:,:,:)
+   double precision, allocatable :: rhspp(:,:,:), pp(:,:,:)
    double precision, allocatable :: div(:,:,:)
    double precision :: uc, vc, wc, umax, gumax=1.0d0, cou, alpha, beta
    double precision :: h11, h12, h13, h21, h22, h23, h31, h32, h33

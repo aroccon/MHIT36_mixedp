@@ -1,0 +1,29 @@
+# Ignore Python cache files
+__pycache__/
+*.pyc
+
+# Ignore virtual environments
+venv/
+.env/
+
+# Ignore OS-specific files
+.DS_Store
+Thumbs.db
+
+# Ignore log files
+*.log
+
+# Ignore all files in multi/ ending with .mod
+multi/*.mod
+
+# Ignore all .nsys-rep files anywhere
+*.nsys-rep
+
+# Ignore SQLite database files
+*.sqlite
+*.sqlite3
+
+# Ignore error and output files
+*.err
+*.out
+output
