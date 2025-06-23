@@ -48,7 +48,7 @@ character(len=4) :: itcount
 real(8)::err,maxErr
 
 ! Enable or disable phase field (acceleration eneabled by default)
-#define phiflag 1
+#define phiflag 0
 
 !########################################################################################################################################
 ! 1. INITIALIZATION OF MPI AND cuDECOMP AUTOTUNING : START
@@ -66,9 +66,9 @@ ierr = cudaSetDevice(localRank) !assign GPU to MPI rank
 ! Define grid and decomposition
 call readinput
 
-! hard coded, then from input
-pr = 2
-pc = 2
+! hard coded
+pr = 0
+pc = 0
 halo_ext=1
 comm_backend = CUDECOMP_TRANSPOSE_COMM_MPI_P2P
 
@@ -101,6 +101,9 @@ endif
 ! initialize cuDecomp with the config file 
 CHECK_CUDECOMP_EXIT(cudecompGridDescCreate(handle, grid_desc, config, options))
 
+
+
+
 ! Print information on configuration
 if (rank == 0) then
    write(*,"(' Running on ', i0, ' x ', i0, ' process grid ...')") config%pdims(1), config%pdims(2)
@@ -110,8 +113,15 @@ if (rank == 0) then
             cudecompHaloCommBackendToString(config%halo_comm_backend)
 endif
 
+! create spectral grid descriptor 
+gdims = [nx/2+1, ny, nz]
+config%gdims = gdims
+CHECK_CUDECOMP_EXIT(cudecompGridDescCreate(handle, grid_descD2Z, config, options))
 
-! get pencil info
+
+
+
+! Get pencil info for the grid descriptor in the physical space
 ! This function returns a pencil struct (piX, piY or piZ) that contains the shape, global lower and upper index bounds (lo and hi), 
 ! size of the pencil, and an order array to indicate the memory layout that will be used (to handle permuted, axis-contiguous layouts).
 ! Additionally, there is a halo_extents data member that indicates the depth of halos for the pencil, by axis.
@@ -126,12 +136,9 @@ nElemY = piY%size
 ! Pencil info in Z-configuration present in PiZ
 CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_desc, piZ, 3))
 nElemZ = piZ%size
-
 CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_desc, piX_nohalo, 1))
 
-
-
-! Get workspace sizes for transpose (1st row) and halo (2nd row)
+! Get workspace sizes for transpose (1st row, not used) and halo (2nd row, used)
 CHECK_CUDECOMP_EXIT(cudecompGetTransposeWorkspaceSize(handle, grid_desc, nElemWork))
 CHECK_CUDECOMP_EXIT(cudecompGetHaloWorkspaceSize(handle, grid_desc, 1, halo, nElemWork_halo))
 
@@ -139,13 +146,11 @@ CHECK_CUDECOMP_EXIT(cudecompGetHaloWorkspaceSize(handle, grid_desc, 1, halo, nEl
 
 
 
-!beginDZ:
 
-write(*,*) "INFO for D2Z "
-gdims = [nx/2+1, ny, nz]
-config%gdims = gdims
-CHECK_CUDECOMP_EXIT(cudecompGridDescCreate(handle, grid_descD2Z, config, options))
-
+! Get pencil info for the grid descriptor in the complex space 
+!gdims = [nx/2+1, ny, nz]
+!config%gdims = gdims
+!CHECK_CUDECOMP_EXIT(cudecompGridDescCreate(handle, grid_descD2Z, config, options))
 
 CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_descD2Z, piX_d2z, 1,halo))
 nElemX_d2z = piX_d2z%size !<- number of total elments in x-configuratiion (include halo)
@@ -155,29 +160,14 @@ nElemY_d2z = piY_d2z%size
 ! Pencil info in Z-configuration present in PiZ
 CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_descD2Z, piZ_d2z, 3))
 nElemZ_d2z = piZ_d2z%size
-
-CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_descD2Z, piX_d2z_nohalo, 1))
-
-
-! Get workspace sizes for transpose (1st row)
+! Get workspace sizes for transpose (1st row,used) and halo (2nd row, not used)
 CHECK_CUDECOMP_EXIT(cudecompGetTransposeWorkspaceSize(handle, grid_descD2Z, nElemWork_d2z))
 CHECK_CUDECOMP_EXIT(cudecompGetHaloWorkspaceSize(handle, grid_descD2Z, 1, halo, nElemWork_halo_d2z))
 
-! endDZ
-
-! show the order 1=x, 2=y, 3=z
-! x-pencils are x,y,z
-! y-pencils are y,z,x
-! z-pencils are z,y,x
-! This is to make the setup of cuFFT easier, cuFFT cannot do FFT along inner directions and also for performance (no stride)
-! if (rank .eq. 0) then
-!   write(*,*) "Order in X-pencil is", piX%order(1),piX%order(2),piX%order(3)
-!   write(*,*) "Order in Y-pencil is", piY%order(1),piY%order(2),piY%order(3)
-!   write(*,*) "Order in Z-pencil is", piZ%order(1),piZ%order(2),piZ%order(3)
-! endif
 
 
-! beginDZ
+
+
 
 ! CUFFT initialization -- Create Plans
 ! Forward 1D FFT in X: D2Z
@@ -190,7 +180,6 @@ batchSize = piX_d2z%shape(2)*piX_d2z%shape(3) !<- number of FFT (from x-pencil d
 status = cufftPlan1D(planXb, nx, CUFFT_Z2D, batchSize)
 if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating X plan Backward'
 
-
 ! it's always 2 and 3 because y-pencil have coordinates y,z,x
 batchSize = piY_d2z%shape(2)*piY_d2z%shape(3)
 status = cufftPlan1D(planY, ny, CUFFT_Z2Z, batchSize)
@@ -201,7 +190,7 @@ batchSize = piZ_d2z%shape(2)*piZ_d2z%shape(3)
 status = cufftPlan1D(planZ, nz, CUFFT_Z2Z, batchSize)
 if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating Z plan Forward & Backward'
 
-! endDZ
+
 
 ! define grid
 allocate(x(nx),kx(nx))
@@ -1049,7 +1038,7 @@ do t=tstart,tfin
    ! END STEP 9: OUTPUT FIELDS N  
    !########################################################################################################################################
 
-
+call nvtxEndRange
 call nvtxEndRange
 enddo
 
