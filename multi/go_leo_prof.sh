@@ -1,4 +1,3 @@
-
 #!/bin/bash
 #SBATCH --account="tra25_openhack"
 #SBATCH --job-name="cudec"
@@ -26,7 +25,7 @@ export LD_LIBRARY_PATH=$ROOT_DIR:$LD_LIBRARY_PATH
 #mpirun -n 4 nsys profile --trace=cuda,nvtx,mpi -o profile_output_%q{SLURM_PROCID} --stats=true ./mhit36
 #mpirun  -n 4 nsys profile -t cuda,nvtx,mpi -o report.$SLURM_LOCALID ./mhit36
 #srun -n 4  nsys profile -t cuda,nvtx,mpi --output=nsys_report_rank%t ./mhit36nsys profile --multiprocess=true -t cuda,nvtx,mpi -o report $
-nsys profile  -t cuda,nvtx,mpi -o report mpirun -np 4 report.$SLURM_LOCALID ./mhit36
+nsys profile  -t cuda,nvtx,mpi,openacc  mpirun -np 4 ./mhit36
 
 
 

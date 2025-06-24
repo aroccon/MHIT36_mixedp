@@ -627,12 +627,13 @@ do t=tstart,tfin
    enddo
 
    ! 5.1c NS forcing
-   !$acc kernels
+   
+   !$acc parallel loop collapse(3) private(kg,jg)
    do k=1+halo_ext, piX%shape(3)-halo_ext
-      kg = piX%lo(3) + k - 1 
       do j=1+halo_ext, piX%shape(2)-halo_ext
-         jg = piX%lo(2) + j - 1 
          do i = 1, piX%shape(1)
+            kg = piX%lo(3) + k - 1 
+            jg = piX%lo(2) + j - 1 
             ! ABC forcing
             rhsu(i,j,k)= rhsu(i,j,k) + f3*sin(k0*x(kg))+f2*cos(k0*x(jg))
             rhsv(i,j,k)= rhsv(i,j,k) + f1*sin(k0*x(i))+f3*cos(k0*x(kg))
@@ -643,7 +644,6 @@ do t=tstart,tfin
          enddo
       enddo
    enddo
-   !$acc end kernels
 
    ! Surface tension forces
    #if phiflag == 1
@@ -759,21 +759,24 @@ do t=tstart,tfin
    ! 6.1 Compute rhs of Poisson equation div*ustar: divergence at the cell center 
    ! I've done the halo updates so to compute the divergence at the pencil border i have the *star from the halo
    call nvtxStartRange("compute RHS")
-   !$acc kernels
-   do k=1+halo_ext, piX%shape(3)-halo_ext
-      do j=1+halo_ext, piX%shape(2)-halo_ext
-          do i=1,nx
-              ip=i+1
-              jp=j+1
-              kp=k+1
-              if (ip > nx) ip=1
-              rhsp(i,j,k) =               (rho*dxi/dt)*(ustar(ip,j,k)-ustar(i,j,k))
-              rhsp(i,j,k) = rhsp(i,j,k) + (rho*dxi/dt)*(vstar(i,jp,k)-vstar(i,j,k))
-              rhsp(i,j,k) = rhsp(i,j,k) + (rho*dxi/dt)*(wstar(i,j,kp)-wstar(i,j,k))
-          enddo
-      enddo
-   enddo
-   !$acc end kernels
+
+     !$acc kernels
+     do k=1+halo_ext, piX%shape(3)-halo_ext
+        do j=1+halo_ext, piX%shape(2)-halo_ext
+            do i=1,nx
+                ip=i+1
+                jp=j+1
+                kp=k+1
+                if (ip > nx) ip=1
+                rhsp(i,j,k) =               (rho*dxi/dt)*(ustar(ip,j,k)-ustar(i,j,k))
+                rhsp(i,j,k) = rhsp(i,j,k) + (rho*dxi/dt)*(vstar(i,jp,k)-vstar(i,j,k))
+                rhsp(i,j,k) = rhsp(i,j,k) + (rho*dxi/dt)*(wstar(i,j,kp)-wstar(i,j,k))
+            enddo
+        enddo
+     enddo
+     !$acc end kernels
+
+   call nvtxEndRange
 
    ! ! !beginDEBUG
    ! !$acc kernels
@@ -797,37 +800,41 @@ do t=tstart,tfin
 
    ! !endDEBUG
 
-   !$acc host_data use_device(rhsp)
-   status = cufftExecD2Z(planXf, rhsp, psi_d)
-   if (status /= CUFFT_SUCCESS) write(*,*) 'X forward error: ', status
-   !$acc end host_data
 
-   !!Nyquist to be set to zero?
-   ! block
-   !    complex(8), device, pointer :: psi_dev(:,:,:)
-   !    call c_f_pointer( c_devloc(psi_d), psi_dev,                       &
-   !                       [piX_d2z%shape(1), piX_d2z%shape(2), piX_d2z%shape(3)] )
-   !    !$acc kernels
-   !    do k = 1, piX_d2z%shape(3)
-   !       do j = 1, piX_d2z%shape(2)
-   !          psi_dev(nx/2+1, j, k) = (0.0_8, 0.0_8)
-   !       end do
-   !    end do
-   !    !$acc end kernels
-   ! end block
+   call nvtxStartRange("FFT forward w/ transpositions")
 
+     !$acc host_data use_device(rhsp)
+     status = cufftExecD2Z(planXf, rhsp, psi_d)
+     if (status /= CUFFT_SUCCESS) write(*,*) 'X forward error: ', status
+     !$acc end host_data
+  
+     !!Nyquist to be set to zero?
+     ! block
+     !    complex(8), device, pointer :: psi_dev(:,:,:)
+     !    call c_f_pointer( c_devloc(psi_d), psi_dev,                       &
+     !                       [piX_d2z%shape(1), piX_d2z%shape(2), piX_d2z%shape(3)] )
+     !    !$acc kernels
+     !    do k = 1, piX_d2z%shape(3)
+     !       do j = 1, piX_d2z%shape(2)
+     !          psi_dev(nx/2+1, j, k) = (0.0_8, 0.0_8)
+     !       end do
+     !    end do
+     !    !$acc end kernels
+     ! end block
+  
+  
+     ! psi(kx,y,z) -> psi(y,z,kx)
+     CHECK_CUDECOMP_EXIT(cudecompTransposeXToY(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX,piX_d2z%halo_extents, [0,0,0]))
+     ! psi(y,z,kx) -> psi(ky,z,kx)
+     status = cufftExecZ2Z(planY, psi_d, psi_d, CUFFT_FORWARD)
+     if (status /= CUFFT_SUCCESS) write(*,*) 'Y forward error: ', status
+     ! psi(ky,z,kx) -> psi(z,kx,ky)
+     CHECK_CUDECOMP_EXIT(cudecompTransposeYToZ(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX)) 
+     ! psi(z,kx,ky) -> psi(kz,kx,ky)
+     status = cufftExecZ2Z(planZ, psi_d, psi_d, CUFFT_FORWARD)
+     if (status /= CUFFT_SUCCESS) write(*,*) 'Z forward error: ', status
+     ! END of FFT3D forward
 
-   ! psi(kx,y,z) -> psi(y,z,kx)
-   CHECK_CUDECOMP_EXIT(cudecompTransposeXToY(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX,piX_d2z%halo_extents, [0,0,0]))
-   ! psi(y,z,kx) -> psi(ky,z,kx)
-   status = cufftExecZ2Z(planY, psi_d, psi_d, CUFFT_FORWARD)
-   if (status /= CUFFT_SUCCESS) write(*,*) 'Y forward error: ', status
-   ! psi(ky,z,kx) -> psi(z,kx,ky)
-   CHECK_CUDECOMP_EXIT(cudecompTransposeYToZ(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX)) 
-   ! psi(z,kx,ky) -> psi(kz,kx,ky)
-   status = cufftExecZ2Z(planZ, psi_d, psi_d, CUFFT_FORWARD)
-   if (status /= CUFFT_SUCCESS) write(*,*) 'Z forward error: ', status
-   ! END of FFT3D forward
    call nvtxEndRange
 
    block
@@ -855,43 +862,44 @@ do t=tstart,tfin
 
     call nvtxStartRange("Solution")
 
-    !$acc kernels
-    do jl = 1, npy
-      jg = yoff + jl
-       do il = 1, npx
-          ig = xoff + il
-          do k = 1, nz
-              k2 = kx_d(ig)**2 + kx_d(jg)**2 + kx_d(k)**2    
-              phi3d(k,il,jl) = -phi3d(k,il,jl)/k2/(int(nx,8)*int(ny,8)*int(nz,8))
-          enddo
-       enddo
-    enddo
-    !$acc end kernels
+      !$acc kernels
+      do jl = 1, npy
+        jg = yoff + jl
+         do il = 1, npx
+            ig = xoff + il
+            do k = 1, nz
+                k2 = kx_d(ig)**2 + kx_d(jg)**2 + kx_d(k)**2    
+                phi3d(k,il,jl) = -phi3d(k,il,jl)/k2/(int(nx,8)*int(ny,8)*int(nz,8))
+            enddo
+         enddo
+      enddo
+      ! specify mean (corrects division by zero wavenumber above)
+      if (xoff == 0 .and. yoff == 0) phi3d(1,1,1) = 0.0
+      !$acc end kernels
 
     call nvtxEndRange
-
    
-    ! specify mean (corrects division by zero wavenumber above)
-    if (xoff == 0 .and. yoff == 0) phi3d(1,1,1) = 0.0
-     
    end block
 
    call nvtxStartRange("FFT backwards w/ transpositions")
-   ! psi(kz,kx,ky) -> psi(z,kx,ky)
-   status = cufftExecZ2Z(planZ, psi_d, psi_d, CUFFT_INVERSE)
-   if (status /= CUFFT_SUCCESS) write(*,*) 'Z inverse error: ', status
-   ! psi(z,kx,ky) -> psi(ky,z,kx)
-   CHECK_CUDECOMP_EXIT(cudecompTransposeZToY(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX))
-   ! psi(ky,z,kx) -> psi(y,z,kx)
-   status = cufftExecZ2Z(planY, psi_d, psi_d, CUFFT_INVERSE)
-   if (status /= CUFFT_SUCCESS) write(*,*) 'Y inverse error: ', status
-   ! psi(y,z,kx) -> psi(kx,y,z)
-   CHECK_CUDECOMP_EXIT(cudecompTransposeYToX(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX,[0,0,0], piX_d2z%halo_extents))
-   !$acc host_data use_device(p)
-    ! psi(kx,y,z) -> psi(x,y,z)
-    status = cufftExecZ2D(planXb, psi_d, p)
-    if (status /= CUFFT_SUCCESS) write(*,*) 'X inverse error: ', status
-   !$acc end host_data
+
+     ! psi(kz,kx,ky) -> psi(z,kx,ky)
+     status = cufftExecZ2Z(planZ, psi_d, psi_d, CUFFT_INVERSE)
+     if (status /= CUFFT_SUCCESS) write(*,*) 'Z inverse error: ', status
+     ! psi(z,kx,ky) -> psi(ky,z,kx)
+     CHECK_CUDECOMP_EXIT(cudecompTransposeZToY(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX))
+     ! psi(ky,z,kx) -> psi(y,z,kx)
+     status = cufftExecZ2Z(planY, psi_d, psi_d, CUFFT_INVERSE)
+     if (status /= CUFFT_SUCCESS) write(*,*) 'Y inverse error: ', status
+     ! psi(y,z,kx) -> psi(kx,y,z)
+     CHECK_CUDECOMP_EXIT(cudecompTransposeYToX(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX,[0,0,0], piX_d2z%halo_extents))
+     !$acc host_data use_device(p)
+      ! psi(kx,y,z) -> psi(x,y,z)
+      status = cufftExecZ2D(planXb, psi_d, p)
+      if (status /= CUFFT_SUCCESS) write(*,*) 'X inverse error: ', status
+     !$acc end host_data
+      
+   call nvtxEndRange
 
    !$acc host_data use_device(p)
     ! update halo nodes with pressure (needed for the pressure correction step), using device variable no need to use host-data
@@ -1031,7 +1039,7 @@ do t=tstart,tfin
    !########################################################################################################################################
 
 call nvtxEndRange
-call nvtxEndRange
+!call nvtxEndRange
 enddo
 
 ! Remove allocated variables (add new)
