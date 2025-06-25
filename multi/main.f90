@@ -47,8 +47,14 @@ character(len=4) :: itcount
 
 real(8)::err,maxErr
 
+complex(8), device, pointer :: phi3d(:,:,:)
+real(8) :: k2
+!integer :: il, jl, ig, jg
+integer :: offsets(3), xoff, yoff
+integer :: np(3)
+
 ! Enable or disable phase field (acceleration eneabled by default)
-#define phiflag 0
+#define phiflag 1
 
 !########################################################################################################################################
 ! 1. INITIALIZATION OF MPI AND cuDECOMP AUTOTUNING : START
@@ -371,6 +377,8 @@ beta=0.0d0
 gumax=1.d0
 tstart=tstart+1
 gamma=1.d0*gumax
+!$acc data copyin(piX)
+!$acc data create(rhsu_o, rhsv_o, rhsw_o)
 ! Start temporal loop
 do t=tstart,tfin
     ! Create custom label for each marker
@@ -556,7 +564,7 @@ do t=tstart,tfin
    ! Projection step, convective terms
    ! 5.1a Convective terms NS
    ! Loop on inner nodes
-   !$acc parallel loop collapse(3) private(im,jm,km)
+   !$acc parallel loop collapse(3)
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
          do i=1,nx
@@ -598,7 +606,7 @@ do t=tstart,tfin
    enddo
 
    ! 5.1b Compute viscous terms
-   !$acc parallel loop collapse(3) private(im,jm,km)
+   !$acc parallel loop collapse(3)
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
          do i=1,nx
@@ -628,7 +636,7 @@ do t=tstart,tfin
 
    ! 5.1c NS forcing
    
-   !$acc parallel loop collapse(3) private(kg,jg)
+   !$acc parallel loop collapse(3)
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
          do i = 1, piX%shape(1)
@@ -719,9 +727,9 @@ do t=tstart,tfin
 
    ! store rhs* in rhs*_o 
    ! After first step move to AB2 
-   !$acc kernels
    alpha=1.5d0
    beta= 0.5d0
+   !$acc kernels
    rhsu_o=rhsu
    rhsv_o=rhsv
    rhsw_o=rhsw
@@ -837,12 +845,7 @@ do t=tstart,tfin
 
    call nvtxEndRange
 
-   block
-    complex(8), device, pointer :: phi3d(:,:,:)
-    real(8) :: k2
-    integer :: il, jl, ig, jg
-    integer :: offsets(3), xoff, yoff
-    integer :: np(3)
+   !block
     np(piZ_d2z%order(1)) = piZ_d2z%shape(1)
     np(piZ_d2z%order(2)) = piZ_d2z%shape(2)
     np(piZ_d2z%order(3)) = piZ_d2z%shape(3)
@@ -879,7 +882,7 @@ do t=tstart,tfin
 
     call nvtxEndRange
    
-   end block
+   !end block
 
    call nvtxStartRange("FFT backwards w/ transpositions")
 
@@ -1041,6 +1044,8 @@ do t=tstart,tfin
 call nvtxEndRange
 !call nvtxEndRange
 enddo
+!$acc end data
+!$acc end data
 
 ! Remove allocated variables (add new)
 deallocate(u,v,w)
