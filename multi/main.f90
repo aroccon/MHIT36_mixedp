@@ -76,7 +76,8 @@ call readinput
 pr = 0
 pc = 0
 halo_ext=1
-comm_backend = CUDECOMP_TRANSPOSE_COMM_MPI_P2P
+! comm_backend = CUDECOMP_TRANSPOSE_COMM_MPI_P2P
+comm_backend = 0 ! Enable full autotuning
 
 CHECK_CUDECOMP_EXIT(cudecompInit(handle, MPI_COMM_WORLD))
 
@@ -87,8 +88,8 @@ CHECK_CUDECOMP_EXIT(cudecompInit(handle, MPI_COMM_WORLD))
 CHECK_CUDECOMP_EXIT(cudecompGridDescConfigSetDefaults(config))
 pdims = [pr, pc] !pr and pc are the number of pencil along the different directions
 config%pdims = pdims
-gdims = [nx, ny, nz]
-config%gdims = gdims
+! gdims = [nx, ny, nz]
+! config%gdims = gdims
 halo = [0, halo_ext, halo_ext] ! no halo along x neeed because is periodic and in physical space i have x-pencil
 ! for transpositions
 config%transpose_comm_backend = comm_backend
@@ -98,22 +99,41 @@ config%halo_comm_backend = CUDECOMP_HALO_COMM_MPI
 ! Setting for periodic halos in all directions (non required to be in config)
 halo_periods = [.true., .true., .true.]
 
+! create spectral grid descriptor first to select pdims for optimal transposes
+gdims = [nx/2+1, ny, nz]
+config%gdims = gdims
+
+! Set up autotuning options for spectral grid (transpose related settings)
 CHECK_CUDECOMP_EXIT(cudecompGridDescAutotuneOptionsSetDefaults(options))
 options%dtype = CUDECOMP_DOUBLE_COMPLEX
 if (comm_backend == 0) then
    options%autotune_transpose_backend = .true.
+   options%autotune_halo_backend = .false.
 endif
+options%transpose_use_inplace_buffers = .true.
+options%transpose_input_halo_extents(:, 1) = halo
+options%transpose_output_halo_extents(:, 4) = halo
 
-! create physical grid descriptor 
-CHECK_CUDECOMP_EXIT(cudecompGridDescCreate(handle, grid_desc, config, options))
-
-! create spectral grid descriptor 
-! take previous config and modify the global grid (nx/2+1 instead of nx)
-gdims = [nx/2+1, ny, nz]
-config%gdims = gdims
 CHECK_CUDECOMP_EXIT(cudecompGridDescCreate(handle, grid_descD2Z, config, options))
 
+! create physical grid descriptor
+! take previous config and modify the global grid (nx instead of nx/2+1)
+! reset transpose_comm_backend to default value to avoid picking up possible nvshmem
+! transpose backend selection (this impacts how workspaces are allocated)
+gdims = [nx, ny, nz]
+config%gdims = gdims
+config%transpose_comm_backend = CUDECOMP_TRANSPOSE_COMM_MPI_P2P
 
+! Set up autotuning options for physical grid (halo related settings)
+CHECK_CUDECOMP_EXIT(cudecompGridDescAutotuneOptionsSetDefaults(options))
+options%dtype = CUDECOMP_DOUBLE_COMPLEX
+if (comm_backend == 0) then
+   options%autotune_halo_backend = .true.
+endif
+options%halo_extents(:) = halo
+options%halo_periods(:) = halo_periods
+options%halo_axis = 1
+CHECK_CUDECOMP_EXIT(cudecompGridDescCreate(handle, grid_desc, config, options))
 
 ! Print information on configuration
 if (rank == 0) then
