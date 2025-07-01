@@ -136,13 +136,13 @@ options%halo_axis = 1
 CHECK_CUDECOMP_EXIT(cudecompGridDescCreate(handle, grid_desc, config, options))
 
 ! Print information on configuration
-if (rank == 0) then
-   write(*,"(' Running on ', i0, ' x ', i0, ' process grid ...')") config%pdims(1), config%pdims(2)
-   write(*,"(' Using ', a, ' transpose backend ...')") &
-            cudecompTransposeCommBackendToString(config%transpose_comm_backend)
-   write(*,"(' Using ', a, ' halo backend ...')") &
-            cudecompHaloCommBackendToString(config%halo_comm_backend)
-endif
+!if (rank == 0) then
+!   write(*,"(' Running on ', i0, ' x ', i0, ' process grid ...')") config%pdims(1), config%pdims(2)
+!   write(*,"(' Using ', a, ' transpose backend ...')") &
+!            cudecompTransposeCommBackendToString(config%transpose_comm_backend)
+!   write(*,"(' Using ', a, ' halo backend ...')") &
+!            cudecompHaloCommBackendToString(config%halo_comm_backend)
+!endif
 
 
 ! Get pencil info for the grid descriptor in the physical space
@@ -584,7 +584,7 @@ do t=tstart,tfin
    ! Projection step, convective terms
    ! 5.1a Convective terms NS
    ! Loop on inner nodes
-   !$acc parallel loop collapse(3)
+   !$acc parallel loop tile(16,4,2)
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
          do i=1,nx
@@ -626,7 +626,7 @@ do t=tstart,tfin
    enddo
 
    ! 5.1b Compute viscous terms
-   !$acc parallel loop collapse(3)
+   !$acc parallel loop tile(16,4,2)
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
          do i=1,nx
@@ -656,7 +656,7 @@ do t=tstart,tfin
 
    ! 5.1c NS forcing
    
-   !$acc parallel loop collapse(3)
+   !$acc parallel loop tile(16,4,2)
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
          do i = 1, piX%shape(1)
