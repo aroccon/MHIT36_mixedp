@@ -732,7 +732,7 @@ do t=tstart,tfin
    !$acc end kernels   
    #endif
 
-   ! 5.2 find u, v and w star (explicit Eulero), only in the inner nodes 
+   ! 5.2 find u, v and w star (AB2), only in the inner nodes 
    !$acc kernels
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
@@ -748,15 +748,8 @@ do t=tstart,tfin
    enddo
    !$acc end kernels
 
-   ! store rhs* in rhs*_o 
-   ! After first step move to AB2 
    alpha=1.5d0
    beta= 0.5d0
-   ! !$acc kernels
-   ! rhsu_o=rhsu
-   ! rhsv_o=rhsv
-   ! rhsw_o=rhsw
-   ! !$acc end kernels
 
    ! 5.3 update halos (y and z directions), required to then compute the RHS of Poisson equation because of staggered grid
    !$acc host_data use_device(u)
