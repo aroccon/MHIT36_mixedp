@@ -493,7 +493,6 @@ do t=tstart,tfin
                         + gamma*(eps*(phi(ip,j,k)-2.d0*phi(i,j,k)+phi(im,j,k))*ddxi + &                   ! 4.1.2 Compute diffusive term
                                  eps*(phi(i,jp,k)-2.d0*phi(i,j,k)+phi(i,jm,k))*ddxi + &                   ! 4.1.2 Compute diffusive term
                                  eps*(phi(i,j,kp)-2.d0*phi(i,j,k)+phi(i,j,km))*ddxi)                      ! 4.1.2 Compute diffusive term
-            ! end of 4.1 RHS computation
 
             ! 4.1.3. Compute Sharpening term (gradient)
             ! Substep 1 computer normals
@@ -694,12 +693,10 @@ do t=tstart,tfin
             if (ip .gt. nx) ip=1
             if (im .lt. 1) im=nx
             chempot=phi(i,j,k)*(1.d0-phi(i,j,k))*(1.d0-2.d0*phi(i,j,k))*epsi-eps*(phi(ip,j,k)+phi(im,j,k)+phi(i,jp,k)+phi(i,jm,k)+phi(i,j,kp)+phi(i,j,km)- 6.d0*phi(i,j,k))*ddxi
-            gradphix=0.5d0*(phi(ip,j,k)-phi(im,j,k))*dxi
-            gradphiy=0.5d0*(phi(i,jp,k)-phi(i,jm,k))*dxi
-            gradphiz=0.5d0*(phi(i,j,kp)-phi(i,j,km))*dxi
-            fxst(i,j,k)=6.d0*sigma*chempot*gradphix
-            fyst(i,j,k)=6.d0*sigma*chempot*gradphiy
-            fzst(i,j,k)=6.d0*sigma*chempot*gradphiz
+            ! chempot*gradphi
+            fxst(i,j,k)=6.d0*sigma*chempot*0.5d0*(phi(ip,j,k)-phi(im,j,k))*dxi
+            fyst(i,j,k)=6.d0*sigma*chempot*0.5d0*(phi(i,jp,k)-phi(i,jm,k))*dxi
+            fzst(i,j,k)=6.d0*sigma*chempot*0.5d0*(phi(i,j,kp)-phi(i,j,km))*dxi
          enddo
       enddo
    enddo
