@@ -263,8 +263,8 @@ allocate(div(piX%shape(1),piX%shape(2),piX%shape(3)))
 #if phiflag == 1
 allocate(phi(piX%shape(1),piX%shape(2),piX%shape(3)),rhsphi(piX%shape(1),piX%shape(2),piX%shape(3)))
 allocate(psidi(piX%shape(1),piX%shape(2),piX%shape(3)))
+allocate(tanh_psi(piX%shape(1),piX%shape(2),piX%shape(3)))
 allocate(normx(piX%shape(1),piX%shape(2),piX%shape(3)),normy(piX%shape(1),piX%shape(2),piX%shape(3)),normz(piX%shape(1),piX%shape(2),piX%shape(3)))
-allocate(chempot(piX%shape(1),piX%shape(2),piX%shape(3)),gradphix(piX%shape(1),piX%shape(2),piX%shape(3)),gradphiy(piX%shape(1),piX%shape(2),piX%shape(3)),gradphiz(piX%shape(1),piX%shape(2),piX%shape(3)))
 allocate(fxst(piX%shape(1),piX%shape(2),piX%shape(3)),fyst(piX%shape(1),piX%shape(2),piX%shape(3)),fzst(piX%shape(1),piX%shape(2),piX%shape(3))) ! surface tension forces
 #endif
 
@@ -414,68 +414,70 @@ do t=tstart,tfin
    ! START STEP 4: PHASE-FIELD SOLVER (EXPLICIT)
    !########################################################################################################################################
    #if phiflag == 1
-   ! 4.1 RHS computation, no need of halo update in thoery
-   ! 4.1.1 Convective term
-   !$acc kernels
-   do k=1+halo_ext, piX%shape(3)-halo_ext
-      do j=1+halo_ext, piX%shape(2)-halo_ext
-         do i=1,nx
-               ip=i+1
-               jp=j+1
-               kp=k+1
-               im=i-1
-               jm=j-1
-               km=k-1
-               if (ip .gt. nx) ip=1
-               if (im .lt. 1) im=nx
-               rhsphi(i,j,k) = - (u(ip,j,k)*0.5d0*(phi(ip,j,k)+phi(i,j,k)) - u(i,j,k)*0.5d0*(phi(i,j,k)+phi(im,j,k)))*dxi  &
-                               - (v(i,jp,k)*0.5d0*(phi(i,jp,k)+phi(i,j,k)) - v(i,j,k)*0.5d0*(phi(i,j,k)+phi(i,jm,k)))*dxi  &
-                               - (w(i,j,kp)*0.5d0*(phi(i,j,kp)+phi(i,j,k)) - w(i,j,k)*0.5d0*(phi(i,j,k)+phi(i,j,km)))*dxi
-            enddo
-        enddo
-   enddo
-   !$acc end kernels
 
-   ! 4.1.2 Compute diffusive term 
-   gamma=1.0d0*gumax
-   !$acc kernels
-   do k=1+halo_ext, piX%shape(3)-halo_ext
-      do j=1+halo_ext, piX%shape(2)-halo_ext
-         do i=1,nx
-               ip=i+1
-               jp=j+1
-               kp=k+1
-               im=i-1
-               jm=j-1
-               km=k-1
-               if (ip .gt. nx) ip=1
-               if (im .lt. 1) im=nx
-               rhsphi(i,j,k)=rhsphi(i,j,k)+gamma*(eps*(phi(ip,j,k)-2.d0*phi(i,j,k)+phi(im,j,k))*ddxi + &
-                                                  eps*(phi(i,jp,k)-2.d0*phi(i,j,k)+phi(i,jm,k))*ddxi + &         
-                                                  eps*(phi(i,j,kp)-2.d0*phi(i,j,k)+phi(i,j,km))*ddxi)
-            enddo
-        enddo
-   enddo
-   !$acc end kernels
+   !!! big kernel failed experiment, it is super slow :(
+   ! !$acc kernels
+   ! do k=1, piX%shape(3)
+   !    do j=1, piX%shape(2)
+   !       do i=1,nx
 
-   ! compute distance function psi (used to compute normals)
+   !          ! compute distance function psi (used to compute normals)
+   !          val = min(phi(i,j,k),1.0d0) ! avoid machine precision overshoots in phi that leads to problem with log
+   !          psidi(i,j,k) = eps*log((val+enum)/(1.d0-val+enum))
+
+   !          if(k.ge.1+halo_ext .and. k.le.piX%shape(3)-halo_ext) then
+   !          if(j.ge.1+halo_ext .and. j.le.piX%shape(2)-halo_ext) then
+   !             ! 4.1 RHS computation, no need of halo update in theory
+   !             ip=i+1
+   !             jp=j+1
+   !             kp=k+1
+   !             im=i-1
+   !             jm=j-1
+   !             km=k-1
+   !             if (ip .gt. nx) ip=1
+   !             if (im .lt. 1) im=nx
+   !             rhsphi(i,j,k) =   &
+   !                   - (u(ip,j,k)*0.5d0*(phi(ip,j,k)+phi(i,j,k)) - u(i,j,k)*0.5d0*(phi(i,j,k)+phi(im,j,k)))*dxi  &  ! 4.1.1 Convective term
+   !                   - (v(i,jp,k)*0.5d0*(phi(i,jp,k)+phi(i,j,k)) - v(i,j,k)*0.5d0*(phi(i,j,k)+phi(i,jm,k)))*dxi  &  ! 4.1.1 Convective term
+   !                   - (w(i,j,kp)*0.5d0*(phi(i,j,kp)+phi(i,j,k)) - w(i,j,k)*0.5d0*(phi(i,j,k)+phi(i,j,km)))*dxi  &  ! 4.1.1 Convective term
+   !                         + gamma*(eps*(phi(ip,j,k)-2.d0*phi(i,j,k)+phi(im,j,k))*ddxi + &                   ! 4.1.2 Compute diffusive term
+   !                                  eps*(phi(i,jp,k)-2.d0*phi(i,j,k)+phi(i,jm,k))*ddxi + &                   ! 4.1.2 Compute diffusive term
+   !                                  eps*(phi(i,j,kp)-2.d0*phi(i,j,k)+phi(i,j,km))*ddxi)                      ! 4.1.2 Compute diffusive term
+   !             ! end of 4.1 RHS computation
+
+   !             ! 4.1.3. Compute Sharpening term (gradient)
+   !             ! Substep 1 computer normals
+   !             normx(i,j,k) = (psidi(ip,j,k) - psidi(im,j,k))
+   !             normy(i,j,k) = (psidi(i,jp,k) - psidi(i,jm,k))
+   !             normz(i,j,k) = (psidi(i,j,kp) - psidi(i,j,km))
+
+   !          endif
+   !          endif
+   !       enddo
+   !    enddo
+   ! enddo
+   ! !$acc end kernels
+
    !$acc kernels
    do k=1, piX%shape(3)
       do j=1, piX%shape(2)
          do i=1,nx
+            ! compute distance function psi (used to compute normals)
             val = min(phi(i,j,k),1.0d0) ! avoid machine precision overshoots in phi that leads to problem with log
             psidi(i,j,k) = eps*log((val+enum)/(1.d0-val+enum))
+
+            ! compute here the tanh of distance function psi (used in the sharpening term) to avoid multiple computations of tanh
+            tanh_psi(i,j,k) = tanh(0.5d0*psidi(i,j,k)*epsi)
          enddo
       enddo
    enddo
    !$acc end kernels
 
-   ! 4.1.3. Compute Sharpening term (gradien)
-   ! Substep 1 computer normals
-   !$acc kernels
+   !$acc parallel loop tile(16,4,2)
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
          do i=1,nx
+            ! 4.1 RHS computation, no need of halo update in theory
             ip=i+1
             jp=j+1
             kp=k+1
@@ -484,13 +486,24 @@ do t=tstart,tfin
             km=k-1
             if (ip .gt. nx) ip=1
             if (im .lt. 1) im=nx
+            rhsphi(i,j,k) =   &
+                  - (u(ip,j,k)*0.5d0*(phi(ip,j,k)+phi(i,j,k)) - u(i,j,k)*0.5d0*(phi(i,j,k)+phi(im,j,k)))*dxi  &  ! 4.1.1 Convective term
+                  - (v(i,jp,k)*0.5d0*(phi(i,jp,k)+phi(i,j,k)) - v(i,j,k)*0.5d0*(phi(i,j,k)+phi(i,jm,k)))*dxi  &  ! 4.1.1 Convective term
+                  - (w(i,j,kp)*0.5d0*(phi(i,j,kp)+phi(i,j,k)) - w(i,j,k)*0.5d0*(phi(i,j,k)+phi(i,j,km)))*dxi  &  ! 4.1.1 Convective term
+                        + gamma*(eps*(phi(ip,j,k)-2.d0*phi(i,j,k)+phi(im,j,k))*ddxi + &                   ! 4.1.2 Compute diffusive term
+                                 eps*(phi(i,jp,k)-2.d0*phi(i,j,k)+phi(i,jm,k))*ddxi + &                   ! 4.1.2 Compute diffusive term
+                                 eps*(phi(i,j,kp)-2.d0*phi(i,j,k)+phi(i,j,km))*ddxi)                      ! 4.1.2 Compute diffusive term
+            ! end of 4.1 RHS computation
+
+            ! 4.1.3. Compute Sharpening term (gradient)
+            ! Substep 1 computer normals
             normx(i,j,k) = (psidi(ip,j,k) - psidi(im,j,k))
             normy(i,j,k) = (psidi(i,jp,k) - psidi(i,jm,k))
-            normz(i,j,k) = (psidi(i,j,kp) - psidi(i,j,km)) 
+            normz(i,j,k) = (psidi(i,j,kp) - psidi(i,j,km))
+
          enddo
       enddo
-   enddo 
-   !$acc end kernels
+   enddo
 
    ! Update normx,normy and normz halos, required to then compute normal derivative
    !$acc host_data use_device(normx)
@@ -506,12 +519,15 @@ do t=tstart,tfin
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, normz, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
    !$acc end host_data 
 
-   ! Step 2: Compute normals (1.e-16 is a numerical tollerance to avodi 0/0)
+   ! 4.1.3. Compute Sharpening term (gradient)
+   ! Substep 2: Compute normals (1.e-16 is a numerical tollerance to avodi 0/0)
    !$acc kernels
    do k=1, piX%shape(3)
       do j=1, piX%shape(2)
          do i=1,nx
-            normod = 1.d0/(sqrt(normx(i,j,k)**2d0 + normy(i,j,k)**2d0 + normz(i,j,k)**2d0) + 1.0E-16)
+            normod = 1.d0/(sqrt(normx(i,j,k)*normx(i,j,k) + normy(i,j,k)*normy(i,j,k) + normz(i,j,k)*normz(i,j,k)) + 1.0E-16)
+            ! normod = 1.d0/(sqrt(normx(i,j,k)**2d0 + normy(i,j,k)**2d0 + normz(i,j,k)**2d0) + 1.0E-16)
+
             normx(i,j,k) = normx(i,j,k)*normod
             normy(i,j,k) = normy(i,j,k)*normod
             normz(i,j,k) = normz(i,j,k)*normod
@@ -538,9 +554,23 @@ do t=tstart,tfin
                !                                    ((phi(i,jp,k)**2d0-phi(i,jp,k))*normy(i,jp,k)-(phi(i,jm,k)**2d0-phi(i,jm,k))*normy(i,jm,k))*0.5d0*dxi + &
                !                                    ((phi(i,j,kp)**2d0-phi(i,j,kp))*normz(i,j,kp)-(phi(i,j,km)**2d0-phi(i,j,km))*normz(i,j,km))*0.5d0*dxi)
                ! NEW ACDI
-               rhsphi(i,j,k)=rhsphi(i,j,k)-gamma*((0.25d0*(1.d0-(tanh(0.5d0*psidi(ip,j,k)*epsi))**2)*normx(ip,j,k)- 0.25d0*(1.d0-(tanh(0.5d0*psidi(im,j,k)*epsi))**2)*normx(im,j,k))*0.5*dxi +&
-                                                  (0.25d0*(1.d0-(tanh(0.5d0*psidi(i,jp,k)*epsi))**2)*normy(i,jp,k)- 0.25d0*(1.d0-(tanh(0.5d0*psidi(i,jm,k)*epsi))**2)*normy(i,jm,k))*0.5*dxi +&
-                                                  (0.25d0*(1.d0-(tanh(0.5d0*psidi(i,j,kp)*epsi))**2)*normz(i,j,kp)- 0.25d0*(1.d0-(tanh(0.5d0*psidi(i,j,km)*epsi))**2)*normz(i,j,km))*0.5*dxi)
+               ! rhsphi(i,j,k)=rhsphi(i,j,k)-gamma*((0.25d0*(1.d0-(tanh(0.5d0*psidi(ip,j,k)*epsi))**2)*normx(ip,j,k)- 0.25d0*(1.d0-(tanh(0.5d0*psidi(im,j,k)*epsi))**2)*normx(im,j,k))*0.5*dxi +&
+               !                                    (0.25d0*(1.d0-(tanh(0.5d0*psidi(i,jp,k)*epsi))**2)*normy(i,jp,k)- 0.25d0*(1.d0-(tanh(0.5d0*psidi(i,jm,k)*epsi))**2)*normy(i,jm,k))*0.5*dxi +&
+               !                                    (0.25d0*(1.d0-(tanh(0.5d0*psidi(i,j,kp)*epsi))**2)*normz(i,j,kp)- 0.25d0*(1.d0-(tanh(0.5d0*psidi(i,j,km)*epsi))**2)*normz(i,j,km))*0.5*dxi)
+                              
+               ! rhsphi(i,j,k)=rhsphi(i,j,k)-gamma*((0.25d0*(1.d0-(tanh(0.5d0*psidi(ip,j,k)*epsi))*tanh(0.5d0*psidi(ip,j,k)*epsi))*normx(ip,j,k) - &
+               !                   0.25d0*(1.d0-(tanh(0.5d0*psidi(im,j,k)*epsi))*tanh(0.5d0*psidi(im,j,k)*epsi))*normx(im,j,k))*0.5*dxi + &
+               !                   (0.25d0*(1.d0-(tanh(0.5d0*psidi(i,jp,k)*epsi))*tanh(0.5d0*psidi(i,jp,k)*epsi))*normy(i,jp,k) - &
+               !                   0.25d0*(1.d0-(tanh(0.5d0*psidi(i,jm,k)*epsi))*tanh(0.5d0*psidi(i,jm,k)*epsi))*normy(i,jm,k))*0.5*dxi + &
+               !                   (0.25d0*(1.d0-(tanh(0.5d0*psidi(i,j,kp)*epsi))*tanh(0.5d0*psidi(i,j,kp)*epsi))*normz(i,j,kp) - &
+               !                   0.25d0*(1.d0-(tanh(0.5d0*psidi(i,j,km)*epsi))*tanh(0.5d0*psidi(i,j,km)*epsi))*normz(i,j,km))*0.5*dxi)
+
+               rhsphi(i,j,k)=rhsphi(i,j,k)-gamma*((0.25d0*(1.d0-tanh_psi(ip,j,k)*tanh_psi(i,j,km))*normx(ip,j,k) - &
+                                                   0.25d0*(1.d0-tanh_psi(im,j,k)*tanh_psi(i,j,km))*normx(im,j,k))*0.5*dxi + &
+                                                  (0.25d0*(1.d0-tanh_psi(i,jp,k)*tanh_psi(i,j,km))*normy(i,jp,k) - &
+                                                   0.25d0*(1.d0-tanh_psi(i,jm,k)*tanh_psi(i,j,km))*normy(i,jm,k))*0.5*dxi + &
+                                                  (0.25d0*(1.d0-tanh_psi(i,j,kp)*tanh_psi(i,j,km))*normz(i,j,kp) - &
+                                                   0.25d0*(1.d0-tanh_psi(i,j,km)*tanh_psi(i,j,km))*normz(i,j,km))*0.5*dxi)
             enddo
         enddo
     enddo
@@ -621,23 +651,7 @@ do t=tstart,tfin
             rhsu(i,j,k)=-(h11+h12+h13)
             rhsv(i,j,k)=-(h21+h22+h23)
             rhsw(i,j,k)=-(h31+h32+h33)
-         enddo
-      enddo
-   enddo
-
-   ! 5.1b Compute viscous terms
-   !$acc parallel loop tile(16,4,2)
-   do k=1+halo_ext, piX%shape(3)-halo_ext
-      do j=1+halo_ext, piX%shape(2)-halo_ext
-         do i=1,nx
-            ip=i+1
-            jp=j+1
-            kp=k+1
-            im=i-1
-            jm=j-1
-            km=k-1
-            if (ip .gt. nx) ip=1
-            if (im .lt. 1) im=nx
+            ! viscos term
             h11 = mu*(u(ip,j,k)-2.d0*u(i,j,k)+u(im,j,k))*ddxi
             h12 = mu*(u(i,jp,k)-2.d0*u(i,j,k)+u(i,jm,k))*ddxi
             h13 = mu*(u(i,j,kp)-2.d0*u(i,j,k)+u(i,j,km))*ddxi
@@ -650,16 +664,7 @@ do t=tstart,tfin
             rhsu(i,j,k)=rhsu(i,j,k)+(h11+h12+h13)*rhoi
             rhsv(i,j,k)=rhsv(i,j,k)+(h21+h22+h23)*rhoi
             rhsw(i,j,k)=rhsw(i,j,k)+(h31+h32+h33)*rhoi
-         enddo
-      enddo
-   enddo
-
-   ! 5.1c NS forcing
-   
-   !$acc parallel loop tile(16,4,2)
-   do k=1+halo_ext, piX%shape(3)-halo_ext
-      do j=1+halo_ext, piX%shape(2)-halo_ext
-         do i = 1, piX%shape(1)
+            ! NS forcing
             kg = piX%lo(3) + k - 1 
             jg = piX%lo(2) + j - 1 
             ! ABC forcing
@@ -688,13 +693,13 @@ do t=tstart,tfin
             km=k-1
             if (ip .gt. nx) ip=1
             if (im .lt. 1) im=nx
-            chempot(i,j,k)=phi(i,j,k)*(1.d0-phi(i,j,k))*(1.d0-2.d0*phi(i,j,k))*epsi-eps*(phi(ip,j,k)+phi(im,j,k)+phi(i,jp,k)+phi(i,jm,k)+phi(i,j,kp)+phi(i,j,km)- 6.d0*phi(i,j,k))*ddxi
-            gradphix(i,j,k)=0.5d0*(phi(ip,j,k)-phi(im,j,k))*dxi
-            gradphiy(i,j,k)=0.5d0*(phi(i,jp,k)-phi(i,jm,k))*dxi
-            gradphiz(i,j,k)=0.5d0*(phi(i,j,kp)-phi(i,j,km))*dxi
-            fxst(i,j,k)=6.d0*sigma*chempot(i,j,k)*gradphix(i,j,k)
-            fyst(i,j,k)=6.d0*sigma*chempot(i,j,k)*gradphiy(i,j,k)
-            fzst(i,j,k)=6.d0*sigma*chempot(i,j,k)*gradphiz(i,j,k)
+            chempot=phi(i,j,k)*(1.d0-phi(i,j,k))*(1.d0-2.d0*phi(i,j,k))*epsi-eps*(phi(ip,j,k)+phi(im,j,k)+phi(i,jp,k)+phi(i,jm,k)+phi(i,j,kp)+phi(i,j,km)- 6.d0*phi(i,j,k))*ddxi
+            gradphix=0.5d0*(phi(ip,j,k)-phi(im,j,k))*dxi
+            gradphiy=0.5d0*(phi(i,jp,k)-phi(i,jm,k))*dxi
+            gradphiz=0.5d0*(phi(i,j,kp)-phi(i,j,km))*dxi
+            fxst(i,j,k)=6.d0*sigma*chempot*gradphix
+            fyst(i,j,k)=6.d0*sigma*chempot*gradphiy
+            fzst(i,j,k)=6.d0*sigma*chempot*gradphiz
          enddo
       enddo
    enddo
@@ -726,13 +731,20 @@ do t=tstart,tfin
             rhsu(i,j,k)=rhsu(i,j,k) + 0.5d0*(fxst(im,j,k)+fxst(i,j,k))*rhoi
             rhsv(i,j,k)=rhsv(i,j,k) + 0.5d0*(fyst(i,jm,k)+fyst(i,j,k))*rhoi
             rhsw(i,j,k)=rhsw(i,j,k) + 0.5d0*(fzst(i,j,km)+fzst(i,j,k))*rhoi
-         enddo
+            u(i,j,k) = u(i,j,k) + dt*(alpha*rhsu(i,j,k)-beta*rhsu_o(i,j,k))
+            v(i,j,k) = v(i,j,k) + dt*(alpha*rhsv(i,j,k)-beta*rhsv_o(i,j,k))
+            w(i,j,k) = w(i,j,k) + dt*(alpha*rhsw(i,j,k)-beta*rhsw_o(i,j,k))
+            rhsu_o(i,j,k)=rhsu(i,j,k)
+            rhsv_o(i,j,k)=rhsv(i,j,k)
+            rhsw_o(i,j,k)=rhsw(i,j,k)
+          enddo
       enddo
    enddo
-   !$acc end kernels   
-   #endif
+   !$acc end kernels
 
-   ! 5.2 find u, v and w star (AB2), only in the inner nodes 
+   #else
+
+   ! 5.2 find u, v and w star (explicit Eulero), only in the inner nodes 
    !$acc kernels
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
@@ -748,8 +760,18 @@ do t=tstart,tfin
    enddo
    !$acc end kernels
 
+   #endif
+
+
+   ! store rhs* in rhs*_o 
+   ! After first step move to AB2 
    alpha=1.5d0
    beta= 0.5d0
+   ! !$acc kernels
+   ! rhsu_o=rhsu
+   ! rhsv_o=rhsv
+   ! rhsw_o=rhsw
+   ! !$acc end kernels
 
    ! 5.3 update halos (y and z directions), required to then compute the RHS of Poisson equation because of staggered grid
    !$acc host_data use_device(u)
@@ -949,7 +971,11 @@ do t=tstart,tfin
    ! 8.2 Remove mean velocity if using ABC forcing
    ! 8.3 Call halo exchnages along Y and Z for u,v,w
    ! Correct velocity, pressure has also the halo
+   ! Correction + removal of mean velocity altogether for performance
    !$acc kernels 
+   umean=0.d0
+   vmean=0.d0
+   wmean=0.d0
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
          do i = 1, piX%shape(1) ! equal to nx (no halo on x)
@@ -960,19 +986,6 @@ do t=tstart,tfin
               u(i,j,k)=u(i,j,k) - dt/rho*(p(i,j,k)-p(im,j,k))*dxi
               v(i,j,k)=v(i,j,k) - dt/rho*(p(i,j,k)-p(i,jm,k))*dxi
               w(i,j,k)=w(i,j,k) - dt/rho*(p(i,j,k)-p(i,j,km))*dxi
-          enddo
-      enddo
-   enddo
-   !$acc end kernels 
-
-   ! Remove mean velocity (get local mean of the rank)
-   umean=0.d0
-   vmean=0.d0
-   wmean=0.d0
-   !$acc kernels 
-   do k=1+halo_ext, piX%shape(3)-halo_ext
-      do j=1+halo_ext, piX%shape(2)-halo_ext
-         do i = 1, piX%shape(1) ! equal to nx (no halo on x)
               umean=umean + u(i,j,k)
               vmean=vmean + v(i,j,k)
               wmean=wmean + w(i,j,k)
@@ -980,6 +993,9 @@ do t=tstart,tfin
       enddo
    enddo
    !$acc end kernels 
+
+   ! Remove mean velocity (get local mean of the rank)
+
 
    ! Divide by total number of points in the pencil
    umean=umean/nx/(piX%shape(2)-2*halo_ext)/(piX%shape(3)-2*halo_ext)
@@ -1065,6 +1081,7 @@ enddo
 
 ! Remove allocated variables (add new)
 deallocate(u,v,w)
+deallocate(tanh_psi)
 deallocate(rhsu,rhsv,rhsw)
 deallocate(rhsu_o,rhsv_o,rhsw_o)
 deallocate(phi,rhsphi,normx,normy,normz)
@@ -1072,3 +1089,4 @@ deallocate(phi,rhsphi,normx,normy,normz)
 call mpi_finalize(ierr)
 
 end program main
+
