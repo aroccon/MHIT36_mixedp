@@ -59,11 +59,15 @@ If you use this code, please cite the following work:
 ## Reference performance
 
 Performance (NS only) - from last push
-* 512 x 512 x 512 | 4 x A100@Leonardo  |  26 ms/timestep
-* 512 x 512 x 512 | 8 x A100@Leonardo  |  29 ms/timestep
-* 1024 x 1024 x 1024 | 4 x GH200@Nvidia | 161.9 ms/timestep
-* 1024 x 1024 x 1024 | 8 x A100@Leonardo | 208.1 ms/timestep
-* 512 x 512 x 512 | 4 x H100@MN5-ACC   |  18 ms/timestep
+* 512 x 512 x 512 | 4 x A100@Leonardo  |  19 ms/timestep
+* 1024 x 1024 x 1024 | 4 x GH200@Nvidia | 161.9 ms/timestep (out of date)
+* 1024 x 1024 x 1024 | 8 x A100@Leonardo | 150.1 ms/timestep
+* 512 x 512 x 512 | 4 x H100@MN5-ACC   |  18 ms/timestep (out of date)
+
+Performance (NS + ACDI) - from last push
+* 512 x 512 x 512 | 4 x A100@Leonardo  |  28 ms/timestep
+* 1024 x 1024 x 1024 | 8 x A100@Leonardo | 288 ms/timestep
+
 
 ## Contributing
 
