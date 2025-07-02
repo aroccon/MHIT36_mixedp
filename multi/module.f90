@@ -51,6 +51,7 @@ module velocity
    double precision :: uc, vc, wc, umax, gumax=1.0d0, cou, alpha, beta
    double precision :: h11, h12, h13, h21, h22, h23, h31, h32, h33
    double precision :: umean, vmean, wmean, gumean, gvmean, gwmean
+   double precision, allocatable :: mysin(:), mycos(:)
 end module velocity
 
 

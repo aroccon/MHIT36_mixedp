@@ -14,6 +14,8 @@ use nvtx
 
 
 implicit none
+! timer for scaling test
+real :: t_start, t_end, elapsed
 ! grid dimensions
 integer :: comm_backend
 integer :: pr, pc
@@ -230,6 +232,14 @@ do i = nx/2+1, nx
 enddo
 ! allocate k_d on the device (later on remove and use OpenACC + managed memory?)
 allocate(kx_d, source=kx)
+
+allocate(mysin(nx), mycos(nx))
+do i=1,nx
+   ! compute here the sin to avoid multiple computations of sin
+   mysin(i)=sin(k0*x(i))
+   ! compute here the cos to avoid multiple computations of cos
+   mycos(i)=cos(k0*x(i))
+enddo
 !########################################################################################################################################
 ! 1. INITIALIZATION AND cuDECOMP AUTOTUNING : END
 !########################################################################################################################################
@@ -370,12 +380,12 @@ CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, phi, work_halo_d, CU
 !Save initial fields (only if a fresh start)
 if (restart .eq. 0) then
    if (rank.eq.0) write(*,*) "Save initial fields"
-   call writefield(tstart,1)
-   call writefield(tstart,2)
-   call writefield(tstart,3)
+   !call writefield(tstart,1)
+   !call writefield(tstart,2)
+   !call writefield(tstart,3)
    !call writefield(tstart,4)
    #if phiflag == 1
-   call writefield(tstart,5)
+   !call writefield(tstart,5)
    #endif
 endif
 !########################################################################################################################################
@@ -399,6 +409,8 @@ tstart=tstart+1
 gamma=1.d0*gumax
 !$acc data copyin(piX)
 !$acc data create(rhsu_o, rhsv_o, rhsw_o)
+!$acc data copyin(mysin, mycos)
+call cpu_time(t_start)
 ! Start temporal loop
 do t=tstart,tfin
     ! Create custom label for each marker
@@ -558,7 +570,7 @@ do t=tstart,tfin
    ! Projection step, convective terms
    ! 5.1a Convective terms NS
    ! Loop on inner nodes
-   !$acc parallel loop tile(16,4,2)
+   !$acc parallel loop tile(16,4,2) present(mysin, mycos)
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
          do i=1,nx
@@ -612,9 +624,12 @@ do t=tstart,tfin
             kg = piX%lo(3) + k - 1 
             jg = piX%lo(2) + j - 1 
             ! ABC forcing
-            rhsu(i,j,k)= rhsu(i,j,k) + f3*sin(k0*x(kg))+f2*cos(k0*x(jg))
-            rhsv(i,j,k)= rhsv(i,j,k) + f1*sin(k0*x(i))+f3*cos(k0*x(kg))
-            rhsw(i,j,k)= rhsw(i,j,k) + f2*sin(k0*x(jg))+f1*cos(k0*x(i))
+            ! rhsu(i,j,k)= rhsu(i,j,k) + f3*sin(k0*x(kg))+f2*cos(k0*x(jg))
+            rhsu(i,j,k)= rhsu(i,j,k) + f3*mysin(kg)+f2*mycos(jg)
+            ! rhsv(i,j,k)= rhsv(i,j,k) + f1*sin(k0*x(i))+f3*cos(k0*x(kg))
+            rhsv(i,j,k)= rhsv(i,j,k) + f1*mysin(i)+f3*mycos(kg)
+            ! rhsw(i,j,k)= rhsw(i,j,k) + f2*sin(k0*x(jg))+f1*cos(k0*x(i))
+            rhsw(i,j,k)= rhsw(i,j,k) + f2*mysin(jg)+f1*mycos(i)
             ! TG Forcing
             !rhsu(i,j,k)= rhsu(i,j,k) + f1*sin(k0*x(i))*cos(k0*x(j))*cos(k0*x(k))
             !rhsv(i,j,k)= rhsv(i,j,k) - f1*cos(k0*x(i))*sin(k0*x(j))*sin(k0*x(k))
@@ -1002,13 +1017,13 @@ do t=tstart,tfin
    if (mod(t,dump) .eq. 0) then
       if (rank .eq. 0) write(*,*) "Saving output files"
           ! write velocity and pressure fiels (1-4)
-         call writefield(t,1)
-         call writefield(t,2)
-         call writefield(t,3)
+         !call writefield(t,1)
+         !call writefield(t,2)
+         !call writefield(t,3)
          !call writefield(t,4)
          #if phiflag == 1
          ! write phase-field (5)
-         call writefield(t,5)
+         !call writefield(t,5)
          #endif
    endif
    !########################################################################################################################################
@@ -1018,12 +1033,16 @@ do t=tstart,tfin
 call nvtxEndRange
 !call nvtxEndRange
 enddo
+call cpu_time(t_end)
+elapsed = t_end-t_start
+if (rank .eq. 0) write(*,*)  'Elapsed time (seconds):', elapsed
+!$acc end data
 !$acc end data
 !$acc end data
 
 ! Remove allocated variables (add new)
 deallocate(u,v,w)
-deallocate(tanh_psi)
+deallocate(tanh_psi, mysin, mycos)
 deallocate(rhsu,rhsv,rhsw)
 deallocate(rhsu_o,rhsv_o,rhsw_o)
 deallocate(phi,rhsphi,normx,normy,normz)

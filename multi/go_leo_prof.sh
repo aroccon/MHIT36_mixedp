@@ -10,7 +10,7 @@
 #SBATCH --qos=boost_qos_dbg
 #SBATCH --error=test.err
 #### if mapping is on
-####SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=8
 
 
 #module load nvhpc/24.3
@@ -38,10 +38,16 @@ export LD_LIBRARY_PATH=$ROOT_DIR:$LD_LIBRARY_PATH
 #srun -n 4  nsys profile -t cuda,nvtx,mpi --output=nsys_report_rank%t ./mhit36nsys profile --multiprocess=true -t cuda,nvtx,mpi -o report $
 
 # profile + node mapping + nic 
-#mpirun -np 4 --map-by node:PE=8 --rank-by core nsys profile  -t cuda,nvtx,mpi,openacc  --nic-metrics=true  ./binder.sh ./mhit36
+mpirun -np 4 --map-by node:PE=8 --rank-by core nsys profile  -t cuda,nvtx,mpi,openacc  --nic-metrics=true  ./binder.sh ./mhit36
 
 # for nsight compute report
 #mpirun -n 4 ncu --kernel-name main_659 --set=full --import-source=yes -o profile -f --launch-skip 3 --launch-count 1 "./mhit36"
+
+# for nsight compute report - all kernels
+# mpirun -n 4 ncu --kernel-name regex:main_ --set=full --import-source=yes --launch-skip 70 --launch-count 18 -o reportall.%p ./mhit36
+
+# for nsight compute report - all kernels + mapping + nic
+# mpirun -np 4 --map-by node:PE=8 --rank-by core ncu --kernel-name regex:main_ --set=full --import-source=yes --launch-skip 70 --launch-count 18 -o reportall.%p ./binder.sh ./mhit36
 
 
 
