@@ -414,50 +414,6 @@ do t=tstart,tfin
    ! START STEP 4: PHASE-FIELD SOLVER (EXPLICIT)
    !########################################################################################################################################
    #if phiflag == 1
-
-   !!! big kernel failed experiment, it is super slow :(
-   ! !$acc kernels
-   ! do k=1, piX%shape(3)
-   !    do j=1, piX%shape(2)
-   !       do i=1,nx
-
-   !          ! compute distance function psi (used to compute normals)
-   !          val = min(phi(i,j,k),1.0d0) ! avoid machine precision overshoots in phi that leads to problem with log
-   !          psidi(i,j,k) = eps*log((val+enum)/(1.d0-val+enum))
-
-   !          if(k.ge.1+halo_ext .and. k.le.piX%shape(3)-halo_ext) then
-   !          if(j.ge.1+halo_ext .and. j.le.piX%shape(2)-halo_ext) then
-   !             ! 4.1 RHS computation, no need of halo update in theory
-   !             ip=i+1
-   !             jp=j+1
-   !             kp=k+1
-   !             im=i-1
-   !             jm=j-1
-   !             km=k-1
-   !             if (ip .gt. nx) ip=1
-   !             if (im .lt. 1) im=nx
-   !             rhsphi(i,j,k) =   &
-   !                   - (u(ip,j,k)*0.5d0*(phi(ip,j,k)+phi(i,j,k)) - u(i,j,k)*0.5d0*(phi(i,j,k)+phi(im,j,k)))*dxi  &  ! 4.1.1 Convective term
-   !                   - (v(i,jp,k)*0.5d0*(phi(i,jp,k)+phi(i,j,k)) - v(i,j,k)*0.5d0*(phi(i,j,k)+phi(i,jm,k)))*dxi  &  ! 4.1.1 Convective term
-   !                   - (w(i,j,kp)*0.5d0*(phi(i,j,kp)+phi(i,j,k)) - w(i,j,k)*0.5d0*(phi(i,j,k)+phi(i,j,km)))*dxi  &  ! 4.1.1 Convective term
-   !                         + gamma*(eps*(phi(ip,j,k)-2.d0*phi(i,j,k)+phi(im,j,k))*ddxi + &                   ! 4.1.2 Compute diffusive term
-   !                                  eps*(phi(i,jp,k)-2.d0*phi(i,j,k)+phi(i,jm,k))*ddxi + &                   ! 4.1.2 Compute diffusive term
-   !                                  eps*(phi(i,j,kp)-2.d0*phi(i,j,k)+phi(i,j,km))*ddxi)                      ! 4.1.2 Compute diffusive term
-   !             ! end of 4.1 RHS computation
-
-   !             ! 4.1.3. Compute Sharpening term (gradient)
-   !             ! Substep 1 computer normals
-   !             normx(i,j,k) = (psidi(ip,j,k) - psidi(im,j,k))
-   !             normy(i,j,k) = (psidi(i,jp,k) - psidi(i,jm,k))
-   !             normz(i,j,k) = (psidi(i,j,kp) - psidi(i,j,km))
-
-   !          endif
-   !          endif
-   !       enddo
-   !    enddo
-   ! enddo
-   ! !$acc end kernels
-
    !$acc kernels
    do k=1, piX%shape(3)
       do j=1, piX%shape(2)
@@ -465,7 +421,6 @@ do t=tstart,tfin
             ! compute distance function psi (used to compute normals)
             val = min(phi(i,j,k),1.0d0) ! avoid machine precision overshoots in phi that leads to problem with log
             psidi(i,j,k) = eps*log((val+enum)/(1.d0-val+enum))
-
             ! compute here the tanh of distance function psi (used in the sharpening term) to avoid multiple computations of tanh
             tanh_psi(i,j,k) = tanh(0.5d0*psidi(i,j,k)*epsi)
          enddo
@@ -477,7 +432,7 @@ do t=tstart,tfin
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
          do i=1,nx
-            ! 4.1 RHS computation, no need of halo update in theory
+            ! 4.1 RHS computation
             ip=i+1
             jp=j+1
             kp=k+1
@@ -486,20 +441,18 @@ do t=tstart,tfin
             km=k-1
             if (ip .gt. nx) ip=1
             if (im .lt. 1) im=nx
+            ! convective (first three lines) and diffusive (last three lines)
             rhsphi(i,j,k) =   &
-                  - (u(ip,j,k)*0.5d0*(phi(ip,j,k)+phi(i,j,k)) - u(i,j,k)*0.5d0*(phi(i,j,k)+phi(im,j,k)))*dxi  &  ! 4.1.1 Convective term
-                  - (v(i,jp,k)*0.5d0*(phi(i,jp,k)+phi(i,j,k)) - v(i,j,k)*0.5d0*(phi(i,j,k)+phi(i,jm,k)))*dxi  &  ! 4.1.1 Convective term
-                  - (w(i,j,kp)*0.5d0*(phi(i,j,kp)+phi(i,j,k)) - w(i,j,k)*0.5d0*(phi(i,j,k)+phi(i,j,km)))*dxi  &  ! 4.1.1 Convective term
-                        + gamma*(eps*(phi(ip,j,k)-2.d0*phi(i,j,k)+phi(im,j,k))*ddxi + &                   ! 4.1.2 Compute diffusive term
-                                 eps*(phi(i,jp,k)-2.d0*phi(i,j,k)+phi(i,jm,k))*ddxi + &                   ! 4.1.2 Compute diffusive term
-                                 eps*(phi(i,j,kp)-2.d0*phi(i,j,k)+phi(i,j,km))*ddxi)                      ! 4.1.2 Compute diffusive term
-
-            ! 4.1.3. Compute Sharpening term (gradient)
-            ! Substep 1 computer normals
+                  - (u(ip,j,k)*0.5d0*(phi(ip,j,k)+phi(i,j,k)) - u(i,j,k)*0.5d0*(phi(i,j,k)+phi(im,j,k)))*dxi  &  
+                  - (v(i,jp,k)*0.5d0*(phi(i,jp,k)+phi(i,j,k)) - v(i,j,k)*0.5d0*(phi(i,j,k)+phi(i,jm,k)))*dxi  &  
+                  - (w(i,j,kp)*0.5d0*(phi(i,j,kp)+phi(i,j,k)) - w(i,j,k)*0.5d0*(phi(i,j,k)+phi(i,j,km)))*dxi  &  
+                        + gamma*(eps*(phi(ip,j,k)-2.d0*phi(i,j,k)+phi(im,j,k))*ddxi + &                   
+                                 eps*(phi(i,jp,k)-2.d0*phi(i,j,k)+phi(i,jm,k))*ddxi + &                   
+                                 eps*(phi(i,j,kp)-2.d0*phi(i,j,k)+phi(i,j,km))*ddxi)                      
+            ! 4.1.3. Compute normals for sharpening term (gradient)
             normx(i,j,k) = (psidi(ip,j,k) - psidi(im,j,k))
             normy(i,j,k) = (psidi(i,jp,k) - psidi(i,jm,k))
             normz(i,j,k) = (psidi(i,j,kp) - psidi(i,j,km))
-
          enddo
       enddo
    enddo
@@ -526,7 +479,6 @@ do t=tstart,tfin
          do i=1,nx
             normod = 1.d0/(sqrt(normx(i,j,k)*normx(i,j,k) + normy(i,j,k)*normy(i,j,k) + normz(i,j,k)*normz(i,j,k)) + 1.0E-16)
             ! normod = 1.d0/(sqrt(normx(i,j,k)**2d0 + normy(i,j,k)**2d0 + normz(i,j,k)**2d0) + 1.0E-16)
-
             normx(i,j,k) = normx(i,j,k)*normod
             normy(i,j,k) = normy(i,j,k)*normod
             normz(i,j,k) = normz(i,j,k)*normod
@@ -555,15 +507,8 @@ do t=tstart,tfin
                ! NEW ACDI
                ! rhsphi(i,j,k)=rhsphi(i,j,k)-gamma*((0.25d0*(1.d0-(tanh(0.5d0*psidi(ip,j,k)*epsi))**2)*normx(ip,j,k)- 0.25d0*(1.d0-(tanh(0.5d0*psidi(im,j,k)*epsi))**2)*normx(im,j,k))*0.5*dxi +&
                !                                    (0.25d0*(1.d0-(tanh(0.5d0*psidi(i,jp,k)*epsi))**2)*normy(i,jp,k)- 0.25d0*(1.d0-(tanh(0.5d0*psidi(i,jm,k)*epsi))**2)*normy(i,jm,k))*0.5*dxi +&
-               !                                    (0.25d0*(1.d0-(tanh(0.5d0*psidi(i,j,kp)*epsi))**2)*normz(i,j,kp)- 0.25d0*(1.d0-(tanh(0.5d0*psidi(i,j,km)*epsi))**2)*normz(i,j,km))*0.5*dxi)
-                              
-               ! rhsphi(i,j,k)=rhsphi(i,j,k)-gamma*((0.25d0*(1.d0-(tanh(0.5d0*psidi(ip,j,k)*epsi))*tanh(0.5d0*psidi(ip,j,k)*epsi))*normx(ip,j,k) - &
-               !                   0.25d0*(1.d0-(tanh(0.5d0*psidi(im,j,k)*epsi))*tanh(0.5d0*psidi(im,j,k)*epsi))*normx(im,j,k))*0.5*dxi + &
-               !                   (0.25d0*(1.d0-(tanh(0.5d0*psidi(i,jp,k)*epsi))*tanh(0.5d0*psidi(i,jp,k)*epsi))*normy(i,jp,k) - &
-               !                   0.25d0*(1.d0-(tanh(0.5d0*psidi(i,jm,k)*epsi))*tanh(0.5d0*psidi(i,jm,k)*epsi))*normy(i,jm,k))*0.5*dxi + &
-               !                   (0.25d0*(1.d0-(tanh(0.5d0*psidi(i,j,kp)*epsi))*tanh(0.5d0*psidi(i,j,kp)*epsi))*normz(i,j,kp) - &
-               !                   0.25d0*(1.d0-(tanh(0.5d0*psidi(i,j,km)*epsi))*tanh(0.5d0*psidi(i,j,km)*epsi))*normz(i,j,km))*0.5*dxi)
-
+               !  
+               ! ACDI improved version with pre-computed tanh                                
                rhsphi(i,j,k)=rhsphi(i,j,k)-gamma*((0.25d0*(1.d0-tanh_psi(ip,j,k)*tanh_psi(i,j,km))*normx(ip,j,k) - &
                                                    0.25d0*(1.d0-tanh_psi(im,j,k)*tanh_psi(i,j,km))*normx(im,j,k))*0.5*dxi + &
                                                   (0.25d0*(1.d0-tanh_psi(i,jp,k)*tanh_psi(i,j,km))*normy(i,jp,k) - &
