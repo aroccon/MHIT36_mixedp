@@ -380,12 +380,12 @@ CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, phi, work_halo_d, CU
 !Save initial fields (only if a fresh start)
 if (restart .eq. 0) then
    if (rank.eq.0) write(*,*) "Save initial fields"
-   !call writefield(tstart,1)
-   !call writefield(tstart,2)
-   !call writefield(tstart,3)
-   !call writefield(tstart,4)
+   call writefield(tstart,1)
+   call writefield(tstart,2)
+   call writefield(tstart,3)
+   call writefield(tstart,4)
    #if phiflag == 1
-   !call writefield(tstart,5)
+   call writefield(tstart,5)
    #endif
 endif
 !########################################################################################################################################
@@ -521,12 +521,19 @@ do t=tstart,tfin
                !                                    (0.25d0*(1.d0-(tanh(0.5d0*psidi(i,jp,k)*epsi))**2)*normy(i,jp,k)- 0.25d0*(1.d0-(tanh(0.5d0*psidi(i,jm,k)*epsi))**2)*normy(i,jm,k))*0.5*dxi +&
                !  
                ! ACDI improved version with pre-computed tanh                                
-               rhsphi(i,j,k)=rhsphi(i,j,k)-gamma*((0.25d0*(1.d0-tanh_psi(ip,j,k)*tanh_psi(i,j,km))*normx(ip,j,k) - &
-                                                   0.25d0*(1.d0-tanh_psi(im,j,k)*tanh_psi(i,j,km))*normx(im,j,k))*0.5*dxi + &
-                                                  (0.25d0*(1.d0-tanh_psi(i,jp,k)*tanh_psi(i,j,km))*normy(i,jp,k) - &
-                                                   0.25d0*(1.d0-tanh_psi(i,jm,k)*tanh_psi(i,j,km))*normy(i,jm,k))*0.5*dxi + &
-                                                  (0.25d0*(1.d0-tanh_psi(i,j,kp)*tanh_psi(i,j,km))*normz(i,j,kp) - &
-                                                   0.25d0*(1.d0-tanh_psi(i,j,km)*tanh_psi(i,j,km))*normz(i,j,km))*0.5*dxi)
+                  rhsphi(i,j,k)=rhsphi(i,j,k)-gamma*((0.25d0*(1.d0-tanh_psi(ip,j,k)*tanh_psi(ip,j,k))*normx(ip,j,k) - &
+                                                      0.25d0*(1.d0-tanh_psi(im,j,k)*tanh_psi(im,j,k))*normx(im,j,k))*0.5*dxi + &
+                                                     (0.25d0*(1.d0-tanh_psi(i,jp,k)*tanh_psi(i,jp,k))*normy(i,jp,k) - &
+                                                      0.25d0*(1.d0-tanh_psi(i,jm,k)*tanh_psi(i,jm,k))*normy(i,jm,k))*0.5*dxi + &
+                                                     (0.25d0*(1.d0-tanh_psi(i,j,kp)*tanh_psi(i,j,kp))*normz(i,j,kp) - &
+                                                      0.25d0*(1.d0-tanh_psi(i,j,km)*tanh_psi(i,j,km))*normz(i,j,km))*0.5*dxi)
+
+               ! rhsphi(i,j,k)=rhsphi(i,j,k)-gamma*((0.25d0*(1.d0-(tanh(0.5d0*psidi(ip,j,k)*epsi))**2)*normx(ip,j,k)- &
+               !                                    0.25d0*(1.d0-(tanh(0.5d0*psidi(im,j,k)*epsi))**2)*normx(im,j,k))*0.5*dxi +&
+               !                                    (0.25d0*(1.d0-(tanh(0.5d0*psidi(i,jp,k)*epsi))**2)*normy(i,jp,k) - &
+                !                                    0.25d0*(1.d0-(tanh(0.5d0*psidi(i,jm,k)*epsi))**2)*normy(i,jm,k))*0.5*dxi +&
+               !  
+
             enddo
         enddo
     enddo
@@ -570,7 +577,7 @@ do t=tstart,tfin
    ! Projection step, convective terms
    ! 5.1a Convective terms NS
    ! Loop on inner nodes
-   !$acc parallel loop tile(16,4,2) present(mysin, mycos)
+   !$acc parallel loop tile(16,4,2) 
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
          do i=1,nx
@@ -1016,14 +1023,14 @@ do t=tstart,tfin
    ! ########################################################################################################################################
    if (mod(t,dump) .eq. 0) then
       if (rank .eq. 0) write(*,*) "Saving output files"
-          ! write velocity and pressure fiels (1-4)
-         !call writefield(t,1)
-         !call writefield(t,2)
-         !call writefield(t,3)
-         !call writefield(t,4)
+         ! write velocity and pressure fiels (1-4)
+         call writefield(t,1)
+         call writefield(t,2)
+         call writefield(t,3)
+         call writefield(t,4)
          #if phiflag == 1
          ! write phase-field (5)
-         !call writefield(t,5)
+         call writefield(t,5)
          #endif
    endif
    !########################################################################################################################################
