@@ -162,7 +162,6 @@ nElemY = piY%size
 ! Pencil info in Z-configuration present in PiZ
 CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_desc, piZ, 3))
 nElemZ = piZ%size
-CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_desc, piX_nohalo, 1))
 
 ! Get workspace sizes for transpose (1st row, not used) and halo (2nd row, used)
 CHECK_CUDECOMP_EXIT(cudecompGetTransposeWorkspaceSize(handle, grid_desc, nElemWork))
