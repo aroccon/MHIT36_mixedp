@@ -30,8 +30,8 @@ module cudecompvar
    integer :: gdims(3) ! global grid dimensions
    integer :: halo(3) ! halo extensions
    integer :: halo_ext ! 0 no halo, 1 means 1 halo
-   type(cudecompPencilInfo) :: piX, piY, piZ , piX_nohalo! size of the pencils in x- y- and z-configuration
-   type(cudecompPencilInfo) :: piX_d2z, piY_d2z, piZ_d2z,piX_d2z_nohalo  ! size of the pencils in x- y- and z-configuration for D2Z
+   type(cudecompPencilInfo) :: piX, piY, piZ ! size of the pencils in x- y- and z-configuration
+   type(cudecompPencilInfo) :: piX_d2z, piY_d2z, piZ_d2z  ! size of the pencils in x- y- and z-configuration for D2Z
    type(cudecompPencilInfo) :: piX_Poiss
    integer(8) :: nElemX, nElemY, nElemZ, nElemWork, nElemWork_halo,nElemWork_halo_d2z
    integer(8) :: nElemX_d2z, nElemY_d2z, nElemZ_d2z, nElemWork_d2z
@@ -41,7 +41,6 @@ end module cudecompvar
 
 module velocity
    double precision, allocatable :: u(:,:,:), v(:,:,:), w(:,:,:)
-   double precision, allocatable :: ustar(:,:,:), vstar(:,:,:), wstar(:,:,:)
    double precision, allocatable :: rhsu(:,:,:), rhsv(:,:,:), rhsw(:,:,:)
    double precision, allocatable :: rhsu_o(:,:,:), rhsv_o(:,:,:), rhsw_o(:,:,:)
    complex(8), allocatable :: rhsp_complex(:,:,:)
