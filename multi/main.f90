@@ -235,9 +235,9 @@ allocate(kx_d, source=kx)
 allocate(mysin(nx), mycos(nx))
 do i=1,nx
    ! compute here the sin to avoid multiple computations of sin
-   mysin(i)=sin(k0*x(i))
+   mysin(i)=sin(k0*x(i)+dx/2)
    ! compute here the cos to avoid multiple computations of cos
-   mycos(i)=cos(k0*x(i))
+   mycos(i)=cos(k0*x(i)+dx/2)
 enddo
 !########################################################################################################################################
 ! 1. INITIALIZATION AND cuDECOMP AUTOTUNING : END
@@ -439,6 +439,7 @@ do t=tstart,tfin
    enddo
    !$acc end kernels
 
+   gamma=1.d0*gumax
    !$acc parallel loop tile(16,4,2)
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
