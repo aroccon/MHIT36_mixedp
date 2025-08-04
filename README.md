@@ -1,6 +1,6 @@
 # MHIT36
 
-Code for direct numerical simulation of Navier-Stokes equation coupled with a phase-field method (ACDI) for interface description.
+Code for direct numerical simulation of Navier-Stokes equations coupled with a phase-field method (ACDI) for interface description.
 
 ~~~text
 ███    ███ ██   ██ ██ ████████ ██████   ██████       
@@ -17,7 +17,7 @@ If you use this code, please cite the following work:
   @article{roccon2025,
   title   = {MHIT36: A Phase-Field Code for Gpu Simulations of Multiphase Homogeneous Isotropic Turbulence},
   author  = {Roccon, A. and Enzenberger, L. and Zaza, D. and Soldati, A.},
-  journal = {SSRN},
+  journal = {Computer Physics Communications (in press)},
   year    = {2025},
   doi     = {http://dx.doi.org/10.2139/ssrn.5264052}
 }
@@ -66,7 +66,6 @@ Performance (NS only)
 * 256 x 256 x 256 | 4 x H100@MN5-ACC   |   13 ms/timestep
 * 512 x 512 x 512 | 4 x H100@MN5-ACC   |  230 ms/timestep
 * 1024 x 1024 x 1024 | 32 x H100@MN5-ACC  | 320 ms/timestep
-
 * 2048 x 2048 x 2048 | 512 x H100@MN5-ACC  | 259 ms/timestep
 
 Phase-field introduces about 15% of overhead compared to NS only.
@@ -76,7 +75,7 @@ Phase-field introduces about 15% of overhead compared to NS only.
 Strong scaling results obtained on Leonardo (4 x A100 64 GB x node) and MN5 (4 x H100 40 GB x node)
 * Tested from 1 node up to 128 nodes (Leonardo)
 * Tested from 1 node up to 256 nodes (MN5-ACC)
-* Grid from 64 x 64 x 64 up to 2048 x 2048 x 2048
+* Grid from 64 x 64 x 64 up to 4096 x 4096 x 4096
 * Very similar scaling for both NS and NS+ACDI
 
 ![Scal](val/scaling.png)
