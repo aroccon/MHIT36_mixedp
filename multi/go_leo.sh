@@ -26,6 +26,3 @@ export LD_LIBRARY_PATH=$ROOT_DIR:$LD_LIBRARY_PATH
 
 chmod 777 binder.sh
 mpirun -np 4 --map-by node:PE=8 --rank-by core  ./binder.sh ./mhit36
-
-# mpirun -n 4 nsys profile --trace=cuda,nvtx,mpi -o profile_output_%q{SLURM_PROCID} --stats=true ./mhit36
-

@@ -49,5 +49,3 @@ mpirun -np 4 --map-by node:PE=8 --rank-by core nsys profile  -t cuda,nvtx,mpi,op
 # for nsight compute report - all kernels + mapping + nic
 # mpirun -np 4 --map-by node:PE=8 --rank-by core ncu --kernel-name regex:main_ --set=full --import-source=yes --launch-skip 70 --launch-count 18 -o reportall.%p ./binder.sh ./mhit36
 
-
-
