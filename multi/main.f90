@@ -73,7 +73,7 @@ ierr = cudaSetDevice(localRank) !assign GPU to MPI rank
 ! Define grid and decomposition
 call readinput
 
-! hard coded
+! number of process along each direction (r means y and c means z)
 pr = 0
 pc = 0
 halo_ext=1
@@ -390,7 +390,7 @@ call cpu_time(t_start)
 
 ! Start temporal loop
 do t=tstart,tfin
-   ! Create custom label for each marker
+   ! Create custom label for each marker (profiling)
     write(itcount,'(i4)') t
    ! Range with custom  color (uncomment for profiling)
    ! call nvtxStartRange("Iteration "//itcount,t)
@@ -465,7 +465,7 @@ do t=tstart,tfin
       !$acc end host_data 
 
       ! 4.1.3. Compute Sharpening term (gradient)
-      ! Substep 2: Compute normals (1.e-16 is a numerical tollerance to avodi 0/0)
+      ! Substep 2: Compute normals (1.e-16 is a numerical tollerance to avoid 0/0)
       !$acc kernels
       do k=1, piX%shape(3)
          do j=1, piX%shape(2)
@@ -596,20 +596,13 @@ do t=tstart,tfin
             rhsu(i,j,k)=rhsu(i,j,k)+(h11+h12+h13)*rhoi
             rhsv(i,j,k)=rhsv(i,j,k)+(h21+h22+h23)*rhoi
             rhsw(i,j,k)=rhsw(i,j,k)+(h31+h32+h33)*rhoi
-
             ! NS forcing
             kg = piX%lo(3) + k - 1 
             jg = piX%lo(2) + j - 1
-
             ! ABC forcing
             rhsu(i,j,k)= rhsu(i,j,k) + f3*mysin(kg)+f2*mycos(jg)
             rhsv(i,j,k)= rhsv(i,j,k) + f1*mysin(i)+f3*mycos(kg)
             rhsw(i,j,k)= rhsw(i,j,k) + f2*mysin(jg)+f1*mycos(i)
-
-            ! TG Forcing
-            !rhsu(i,j,k)= rhsu(i,j,k) + f1*sin(k0*x(i))*cos(k0*x(j))*cos(k0*x(k))
-            !rhsv(i,j,k)= rhsv(i,j,k) - f1*cos(k0*x(i))*sin(k0*x(j))*sin(k0*x(k))
-
          enddo
       enddo
    enddo
@@ -617,7 +610,7 @@ do t=tstart,tfin
    ! Surface tension forces
    #if phiflag == 1
       !$acc kernels
-      !Obtain surface tension forces evaluated at the center of the cell (same as where phi is located)
+      !Obtain surface tension forces evaluated at the center of the cell (where phi is located)
       do k=1+halo_ext, piX%shape(3)-halo_ext
          do j=1+halo_ext, piX%shape(2)-halo_ext
             do i=1,nx
@@ -698,7 +691,7 @@ do t=tstart,tfin
 
 
    ! store rhs* in rhs*_o 
-   ! After first step move to AB2 
+   ! First step is done with Euler explicit and then move to AB2 
    alpha=1.5d0
    beta= 0.5d0
 
@@ -757,27 +750,6 @@ do t=tstart,tfin
    ! (uncomment for profiling)
    ! call nvtxEndRange
 
-   ! ! !beginDEBUG
-   ! !$acc kernels
-   ! rhsp=0.0d0
-   ! !$acc end kernels
-
-   ! !$acc kernels
-   ! do kl = 1 + halo_ext , piX%shape(3)-halo_ext 
-   !    kg = piX%lo(3)  + kl - 1
-   !    do jl = 1 + halo_ext  , piX%shape(2) -halo_ext  
-   !       jg = piX%lo(2) + jl - 1 
-   !       do i = 1, nx
-   !          ! rhsp(i,jl,kl) = sin(Mx*(x(i)+dx/2.0d0))*sin(My*(x(jg)+dx/2.0d0))*sin(Mz*(x(kg)+dx/2.0d0))
-   !          rhsp(i,jl,kl) = sin(Mx*(x(i)))*sin(My*(x(jg)))*sin(Mz*(x(kg)))
-   !          ua(i,jl,kl) = -rhsp(i,jl,kl)/(Mx**2 + My**2 + Mz**2)
-   !       enddo
-   !    enddo
-   ! enddo
-   ! !$acc end kernels
-
-   ! !endDEBUG
-
    ! (uncomment for profiling)
    ! call nvtxStartRange("FFT forward w/ transpositions")
 
@@ -807,7 +779,6 @@ do t=tstart,tfin
    call c_f_pointer(c_devloc(psi_d), phi3d, piZ_d2z%shape)
 
    ! divide by -K**2, and normalize
-
    offsets(piZ_d2z%order(1)) = piZ_d2z%lo(1) - 1
    offsets(piZ_d2z%order(2)) = piZ_d2z%lo(2) - 1
    offsets(piZ_d2z%order(3)) = piZ_d2z%lo(3) - 1

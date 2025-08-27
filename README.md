@@ -27,7 +27,7 @@ If you use this code, please cite the following work:
 }
 ```
 
-![Test](val/render.png)
+![Test](val/render2.jpg)
 
 
 ## Run the code
@@ -53,9 +53,9 @@ Performance (NS only)
 * 2048 x 2048 x 2048 |  64 x A100@Leonardo  | 330 ms/timestep
 * 4096 x 4096 x 4096 | 256 x A100@Leonardo  | 780 ms/timestep
 
-Phase-field introduces about 20% of overhead compared to NS only.
-Max resolution tested: 4096^3
-Max number of GPUs used: 512 (Leonardo) and 1024 (MN5)
+- Phase-field introduces about 20% of overhead compared to NS only.
+- Max resolution tested: 4096^3
+- Max number of GPUs used: 512 (Leonardo) and 1024 (MN5)
 
 
 ## Validation
@@ -65,6 +65,8 @@ Benchamrk present in "W.M.VanRees, A.Leonard, D.Pullin, P.Koumoutsakos, A compar
 Time evolution of the viscous dissipation:
 
 ![Test](val/val.png)
+
+Single refers to the single-GPU implmenetation of the code, which is available [here](https://github.com/aroccon/MHIT36_single)
 
 
 ## Contributing
