@@ -136,14 +136,15 @@ options%halo_periods(:) = halo_periods
 options%halo_axis = 1
 CHECK_CUDECOMP_EXIT(cudecompGridDescCreate(handle, grid_desc, config, options))
 
-Print information on configuration
-if (rank == 0) then
-   write(*,"(' Running on ', i0, ' x ', i0, ' process grid ...')") config%pdims(1), config%pdims(2)
-   write(*,"(' Using ', a, ' transpose backend ...')") &
-         cudecompTransposeCommBackendToString(config%transpose_comm_backend)
-   write(*,"(' Using ', a, ' halo backend ...')") &
-         cudecompHaloCommBackendToString(config%halo_comm_backend)
-endif
+!Print information on configuration
+! issue with NVHPC > 25.X, simply avoid this call (not critical)
+!if (rank == 0) then
+!   write(*,"(' Running on ', i0, ' x ', i0, ' process grid ...')") config%pdims(1), config%pdims(2)
+!   write(*,"(' Using ', a, ' transpose backend ...')") &
+!         cudecompTransposeCommBackendToString(config%transpose_comm_backend)
+!   write(*,"(' Using ', a, ' halo backend ...')") &
+!         cudecompHaloCommBackendToString(config%halo_comm_backend)
+!endif
 
 ! Get pencil info for the grid descriptor in the physical space
 ! This function returns a pencil struct (piX, piY or piZ) that contains the shape, global lower and upper index bounds (lo and hi), 
@@ -972,7 +973,7 @@ deallocate(u,v,w)
 deallocate(tanh_psi, mysin, mycos)
 deallocate(rhsu,rhsv,rhsw)
 deallocate(rhsu_o,rhsv_o,rhsw_o)
-deallocate(phi,rhsphi,rhsphi_o,normx,normy,normz)
+deallocate(phi,rhsphi,normx,normy,normz)
 
 call mpi_finalize(ierr)
 
