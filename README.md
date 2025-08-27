@@ -19,11 +19,11 @@ If you use this code, please cite the following work:
   @article{roccon2025,
   title   = {MHIT36: A Phase-Field Code for Gpu Simulations of Multiphase Homogeneous Isotropic Turbulence},
   author  = {Roccon, A. and Enzenberger, L. and Zaza, D. and Soldati, A.},
-  journal = {Computer Physics Communications (in press)},
+  journal = {Computer Physics Communications},
   year    = {2025},
   volume  = {314},
   issue   = {109804},
-  doi     = {http://dx.doi.org/10.2139/ssrn.5264052}
+  doi     = {https://doi.org/10.1016/j.cpc.2025.109804}
 }
 ```
 
@@ -53,9 +53,11 @@ Performance (NS only)
 * 2048 x 2048 x 2048 |  64 x A100@Leonardo  | 330 ms/timestep
 * 4096 x 4096 x 4096 | 256 x A100@Leonardo  | 780 ms/timestep
 
-- Phase-field introduces about 20% of overhead compared to NS only.
-- Max resolution tested: 4096^3
-- Max number of GPUs used: 512 (Leonardo) and 1024 (MN5)
+Phase-field introduces about 20% of overhead compared to NS only.
+
+Max resolution tested: 4096^3
+
+Max number of GPUs used: 512 (Leonardo) and 1024 (MN5)
 
 
 ## Validation
