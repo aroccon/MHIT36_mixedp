@@ -1,6 +1,9 @@
 # MHIT36
 
-Code for direct numerical simulation of Navier-Stokes equations coupled with a phase-field method (ACDI) for interface description.
+Multi-GPU code for intreface-resolved simulations of multiphase turbulence.
+The code relies on direct numerical simulation of Navier-Stokes equations coupled with a phase-field method (ACDI) for interface description.
+The code parallerelization relies on the cuDecomp library.
+
 
 ~~~text
 ███    ███ ██   ██ ██ ████████ ██████   ██████       
@@ -10,7 +13,6 @@ Code for direct numerical simulation of Navier-Stokes equations coupled with a p
 ██      ██ ██   ██ ██    ██    ██████   ██████        
 ~~~
 
-Multi-GPU version of MHIT36 using cuDecomp (Nvidia only)
 
 If you use this code, please cite the following work: 
 ```bibtex
@@ -19,66 +21,41 @@ If you use this code, please cite the following work:
   author  = {Roccon, A. and Enzenberger, L. and Zaza, D. and Soldati, A.},
   journal = {Computer Physics Communications (in press)},
   year    = {2025},
+  volume  = {314},
+  issue   = {109804},
   doi     = {http://dx.doi.org/10.2139/ssrn.5264052}
 }
 ```
 
-![Test](val/intro.png)
+![Test](val/render.png)
 
-
-## Check list of features implemented in MHIT36
-
-- Poisson solver (transposition + halo update) ✅
-- Poisson solver validation (periodic solutions) ✅
-- Read input files ✅
-- Skeleton of the code  ✅
-- Halo updates test with CUDA ✅
-- Poisson solver scaling ✅
-- Halo updates test with host_data use_device ✅
-- Flow field initialization ✅
-- Phase-field initialization ✅
-- Phase-field method (ACDI) ✅
-- Forcing ✅
-- HIT validation ✅
-- Full code scaling ✅
-- MPI writing (no halo)  ✅
-- MPI reading (no halo)  ✅
-- Umax via MPI reduction ✅
-- Surface tension forces ✅
-- Remove mean flow via MPI all reduce ✅
 
 ## Run the code
 
-- Compile first the cuDecomp library using *_lib.sh, the resulting modules and library will be located in cuDecomp/build/lib and cuDecomp/build/include
+- Compile the cuDecomp library using *_lib.sh, the resulting modules and library will be located in cuDecomp/build/lib and cuDecomp/build/include; manual compilation can be performed using the Cmake avaialble in the cuDecomp repository.
 - Double check cuDecomp building is fine (must be compiled using HPC-SDK)
-- Folder multi: contains the source-code of the multi GPU version of the code. Use local.sh, leo.sh or mn5.sh to compile and run the code; the multi GPU version relies on cuDecomp for pencils transpositions and halo exchanges.
-- Autotuning of the multi-GPU version: Default pr=0 and pc=0 enables autotuging (when cuDecomp is initialized), cuDecomp will perform an autotuning at the start finding the best decomposition (the only input is the total number of tasks). In this way, everything is automatic and the code does not need to be recompiled when changing the number of MPI processes. Also backend is automatically defined.
+- Folder multi: contains the source-code of the multi GPU version of the code. Use local.sh, leo.sh or mn5.sh to compile and run the code.
+- Code by default is set in full autotuning (pr=0 and pc=0). cuDecomp will perform an autotuning at the start finding the best decomposition (the only input is the total number of tasks). In this way, everything is automatic and the code does not need to be recompiled when changing the number of MPI processes. Also backend is automatically defined.
 - A conditional compilation flag is used to enable or not the phase-field module. By default is single-phase only.
 
 
-## Reference performance
+## Reference performance and scaling
 
 Performance (NS only)
-* 256 x 256 x 256 | 4 x A100@Leonardo  |   16 ms/timestep
-* 512 x 512 x 512 | 4 x A100@Leonardo  |  270 ms/timestep 
-* 1024 x 1024 x 1024 | 32 x A100@Leonardo | 357 ms/timestep 
-* 2048 x 2048 x 2048 | 128 x A100@Leonardo | 820 ms/timestep
-* 256 x 256 x 256 | 4 x H100@MN5-ACC   |   13 ms/timestep
-* 512 x 512 x 512 | 4 x H100@MN5-ACC   |  230 ms/timestep
-* 1024 x 1024 x 1024 | 32 x H100@MN5-ACC  | 320 ms/timestep
-* 2048 x 2048 x 2048 | 512 x H100@MN5-ACC  | 259 ms/timestep
+* 128 x 128 x 128    |   1 x A100@Leonardo  |   1 ms/timestep
+* 256 x 256 x 256    |   1 x A100@Leonardo  |   8 ms/timestep
+* 512 x 512 x 512    |   1 x A100@Leonardo  |  65 ms/timestep 
+* 128 x 128 x 128    |   4 x A100@Leonardo  |   1 ms/timestep
+* 256 x 256 x 256    |   4 x A100@Leonardo  |   3 ms/timestep
+* 512 x 512 x 512    |   4 x A100@Leonardo  |  18 ms/timestep 
+* 512 x 512 x 512    |   4 x H100@MN5-ACC   |  14 ms/timestep 
+* 1024 x 1024 x 1024 |   4 x A100@Leonardo  | 150 ms/timestep 
+* 2048 x 2048 x 2048 |  64 x A100@Leonardo  | 330 ms/timestep
+* 4096 x 4096 x 4096 | 256 x A100@Leonardo  | 780 ms/timestep
 
-Phase-field introduces about 15% of overhead compared to NS only.
-
-## Scaling
-
-Strong scaling results obtained on Leonardo (4 x A100 64 GB x node) and MN5 (4 x H100 40 GB x node)
-* Tested from 1 node up to 128 nodes (Leonardo)
-* Tested from 1 node up to 256 nodes (MN5-ACC)
-* Grid from 64 x 64 x 64 up to 4096 x 4096 x 4096
-* Very similar scaling for both NS and NS+ACDI
-
-![Scal](val/scaling.png)
+Phase-field introduces about 20% of overhead compared to NS only.
+Max resolution tested: 4096^3
+Max number of GPUs used: 512 (Leonardo) and 1024 (MN5)
 
 
 ## Validation
