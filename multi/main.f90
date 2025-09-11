@@ -972,7 +972,7 @@ deallocate(u,v,w)
 deallocate(tanh_psi, mysin, mycos)
 deallocate(rhsu,rhsv,rhsw)
 deallocate(rhsu_o,rhsv_o,rhsw_o)
-deallocate(phi,rhsphi,normx,normy,normz)
+deallocate(phi,rhsphi,rhsphi_o,normx,normy,normz)
 
 call mpi_finalize(ierr)
 
