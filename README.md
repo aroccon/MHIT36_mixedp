@@ -30,17 +30,26 @@ If you use this code, please cite the following work:
 ![Test](val/render2.jpg)
 
 
-## Run the code
-
-- Compile the cuDecomp library using *_lib.sh, the resulting modules and library will be located in cuDecomp/build/lib and cuDecomp/build/include; manual compilation can be performed using the Cmake avaialble in the cuDecomp repository.
-- Double check cuDecomp building is fine (must be compiled using HPC-SDK)
-- Folder multi: contains the source-code of the multi GPU version of the code. Use local.sh, leo.sh or mn5.sh to compile and run the code.
-- Code by default is set in full autotuning (pr=0 and pc=0). cuDecomp will perform an autotuning at the start finding the best decomposition (the only input is the total number of tasks). In this way, everything is automatic and the code does not need to be recompiled when changing the number of MPI processes. Also backend is automatically defined.
-- A conditional compilation flag is used to enable or not the phase-field module. By default is single-phase only.
+## How to run the code
+- **Compile the cuDecomp library** using `*_lib.sh`.  
+  - The resulting modules and libraries will be located in:  
+    - `cuDecomp/build/lib`  
+    - `cuDecomp/build/include`  
+  - Alternatively, you can compile manually using the **CMake** setup provided in the cuDecomp repository.  
+- **Verify the cuDecomp build** to ensure it compiled correctly (must be built using **HPC-SDK**).  
+- **Folder `multi/`**: contains the source code for the multi-GPU version of the code.  
+  - Use one of the scripts (`local.sh`, `leo.sh`, or `mn5.sh`) to compile and run.  
+- **Autotuning (default mode):**  
+  - By default, the code is set to full autotuning (`pr=0`, `pc=0`).  
+  - cuDecomp will automatically determine the best decomposition at runtime, based only on the total number of tasks.  
+  - This means recompilation is **not required** when changing the number of MPI processes.  
+  - The backend is also selected automatically.  
+- **Phase-field module (optional):**  
+  - Controlled via a conditional compilation flag.  
+  - By default, only the single-phase version is enabled.  
 
 
 ## Reference performance and scaling
-
 Performance (NS only)
 * 128 x 128 x 128    |   1 x A100@Leonardo  |   1 ms/timestep
 * 256 x 256 x 256    |   1 x A100@Leonardo  |   8 ms/timestep
@@ -53,8 +62,10 @@ Performance (NS only)
 * 2048 x 2048 x 2048 |  64 x A100@Leonardo  | 330 ms/timestep
 * 4096 x 4096 x 4096 | 256 x A100@Leonardo  | 780 ms/timestep
 
-Phase-field introduces about 20% of overhead compared to NS only.
+Phase-field introduces about 20% of overhead compared to NS only
+
 Max resolution tested: 4096^3
+
 Max number of GPUs used: 512 (Leonardo) and 1024 (MN5)
 
 ## Validation
@@ -74,7 +85,7 @@ If you would like to contribute, please contact aroccon or open an Issue in the 
 
 ## Acknowledgements
 
-We would like to thank the follwing people for the support received during the code development and optimization (as well as CINECA and the Open Hackathons program)
+We would like to thank the follwing people for the support received during the code development and optimization as well as CINECA and the Open Hackathons program:
 - Matt Bettencourt
 - Josh Romero
 - Laura Bellentani
