@@ -74,7 +74,7 @@ If you would like to contribute, please contact aroccon or open an Issue in the 
 
 ## Acknowledgements
 
-We would like to thank the follwing people for the support received during the code development and optimization:
+We would like to thank the follwing people for the support received during the code development and optimization (as well as CINECA and the Open Hackathons program)
 - Matt Bettencourt
 - Josh Romero
 - Laura Bellentani
