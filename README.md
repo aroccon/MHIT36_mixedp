@@ -54,11 +54,8 @@ Performance (NS only)
 * 4096 x 4096 x 4096 | 256 x A100@Leonardo  | 780 ms/timestep
 
 Phase-field introduces about 20% of overhead compared to NS only.
-
 Max resolution tested: 4096^3
-
 Max number of GPUs used: 512 (Leonardo) and 1024 (MN5)
-
 
 ## Validation
 
@@ -70,8 +67,17 @@ Time evolution of the viscous dissipation:
 
 Single refers to the single-GPU implmenetation of the code, which is available [here](https://github.com/aroccon/MHIT36_single)
 
-
 ## Contributing
 
 We welcome all contributions that can enhance MHIT36, including bug fixes, performance improvements, and new features. 
 If you would like to contribute, please contact aroccon or open an Issue in the repository.
+
+## Acknowledgements
+
+We would like to thank the follwing people for the support received during the code development and optimization:
+- Matt Bettencourt
+- Josh Romero
+- Laura Bellentani
+- Alessio Piccolo
+- Pedro Costa 
+- Simone Di Giorgio
