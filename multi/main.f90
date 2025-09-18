@@ -7,10 +7,10 @@ use cufft
 use mpi
 use velocity 
 use phase
+use particles
 use param
 use mpivar
 use cudecompvar
-
 
 implicit none
 ! timer for scaling test
@@ -24,8 +24,6 @@ integer :: planXf, planXb
 integer :: planY, planZ
 integer :: batchsize
 integer :: status
-! other variables (wavenumber, grid location)
-real(8), allocatable :: x(:), kx(:)
 integer :: i,j,k,il,jl,kl,ig,jg,kg,t
 integer :: im,ip,jm,jp,km,kp,last
 integer :: inY,enY,inZ,enZ
@@ -55,7 +53,10 @@ integer :: offsets(3), xoff, yoff
 integer :: np(3)
 
 ! Enable or disable phase field (acceleration eneabled by default)
-#define phiflag 0
+#define phiflag 1
+
+! Enable or disable particle Lagrangian tracking
+#define partflag 1
 
 !########################################################################################################################################
 ! 1. INITIALIZATION OF MPI AND cuDECOMP AUTOTUNING : START
@@ -178,6 +179,12 @@ nElemZ_d2z = piZ_d2z%size
 CHECK_CUDECOMP_EXIT(cudecompGetTransposeWorkspaceSize(handle, grid_descD2Z, nElemWork_d2z))
 CHECK_CUDECOMP_EXIT(cudecompGetHaloWorkspaceSize(handle, grid_descD2Z, 1, halo, nElemWork_halo_d2z))
 
+! Get the global rank of neighboring processes in PiX config
+CHECK_CUDECOMP_EXIT(cudecompGetShiftedRank(handle, grid_desc, 1, 2, 1  , .true. , nidp1y))
+CHECK_CUDECOMP_EXIT(cudecompGetShiftedRank(handle, grid_desc, 1, 2, -1 , .true. , nidm1y))
+CHECK_CUDECOMP_EXIT(cudecompGetShiftedRank(handle, grid_desc, 1, 3, 1  , .true. , nidp1z))
+CHECK_CUDECOMP_EXIT(cudecompGetShiftedRank(handle, grid_desc, 1, 3, -1 , .true. , nidm1z))
+
 
 
 ! CUFFT initialization -- Create Plans
@@ -204,11 +211,31 @@ if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating Z plan Forwar
 
 
 ! define grid
-allocate(x(nx),kx(nx))
+allocate(x(nx),x_ext(nx+1))
 x(1)= 0
 do i = 2, nx
    x(i) = x(i-1) + dx
 enddo
+
+x_ext(1:nx) = x(1:nx)
+x_ext(nx+1) = lx
+
+! Offsets in the X-pencil decomposition
+pix_yoff = pix%lo(2)-1
+pix_zoff = pix%lo(3)-1
+
+! Boundaries of each PiX pencil
+yinf = x_ext( pix%lo(2) )
+ysup = x_ext( pix%hi(2) + 1 )
+zinf = x_ext( pix%lo(3) )
+zsup = x_ext( pix%hi(3) + 1 )   
+
+! Physical size of each PiX pencil
+lyloc = ysup - yinf
+lzloc = zsup - zinf
+
+! define wavenumbers
+allocate(kx(nx))
 do i = 1, nx/2
    kx(i) = (i-1)*(twoPi/lx)
 enddo
@@ -225,6 +252,10 @@ do i=1,nx
    ! compute here the cos to avoid multiple computations of cos
    mycos(i)=cos(k0*x(i)+dx/2)
 enddo
+
+! Initial distribution of particles among the processes
+nploc = npart/ranks
+nplocmax = nploc*2
 
 !########################################################################################################################################
 ! 1. INITIALIZATION AND cuDECOMP AUTOTUNING : END
@@ -262,12 +293,26 @@ allocate(div(piX%shape(1),piX%shape(2),piX%shape(3)))
    allocate(fxst(piX%shape(1),piX%shape(2),piX%shape(3)),fyst(piX%shape(1),piX%shape(2),piX%shape(3)),fzst(piX%shape(1),piX%shape(2),piX%shape(3))) ! surface tension forces
 #endif
 
+
+
+
+
 ! allocate arrays for transpositions and halo exchanges 
 CHECK_CUDECOMP_EXIT(cudecompMalloc(handle, grid_desc, work_d, nElemWork))
 CHECK_CUDECOMP_EXIT(cudecompMalloc(handle, grid_desc, work_halo_d, nElemWork_halo))
 ! allocate arrays for transpositions
 CHECK_CUDECOMP_EXIT(cudecompMalloc(handle, grid_descD2Z, work_d_d2z, nElemWork_d2z))
 CHECK_CUDECOMP_EXIT(cudecompMalloc(handle, grid_descD2Z, work_halo_d_d2z, nElemWork_halo_d2z))
+
+#if partflag == 1
+! Particle variables
+allocate(part(1:nplocmax,1:ninfop))
+allocate(partbuff(1:nplocmax,1:ninfop))
+allocate(vec_p(1:nplocmax))
+allocate(order_p(1:nplocmax))
+allocate(buffvar1(1:ninfop,1:nploc))
+allocate(buffvar2(1:ninfop,1:nploc))
+#endif
 !########################################################################################################################################
 ! END STEP2: ALLOCATE ARRAYS
 !########################################################################################################################################
@@ -275,7 +320,7 @@ CHECK_CUDECOMP_EXIT(cudecompMalloc(handle, grid_descD2Z, work_halo_d_d2z, nElemW
 
 
 !########################################################################################################################################
-! START STEP 3: FLOW AND PHASE FIELD INIT
+! START STEP 3: FLOW, PHASE FIELD AND PARTICLES INIT
 !########################################################################################################################################
 ! 3.1 Read/initialize from data without halo grid points (avoid out-of-bound if reading usin MPI I/O)
 ! 3.2 Call halo exchnages along Y and Z for u,v,w and phi
@@ -356,6 +401,24 @@ CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, w, work_halo_d, CUDE
    !$acc end host_data 
 #endif
 
+#if partflag == 1
+  if (restart .eq. 0) then
+     if (rank.eq.0) write(*,*) 'Initialize particles (fresh start)'
+     if (inpart .eq. 1) then
+        if (rank.eq.0) write(*,*) 'Random Position whole Domain'
+        call particlegenerator(inpart)
+     endif
+      if (inpart .eq. 2) then
+         if (rank.eq.0)  write(*,*) 'Random Position in Drops'
+         call particlegenerator(inpart)
+      endif
+  endif
+ !   if (restart .eq. 1) then
+ !      write(*,*) "Initialize phase-field (restart, from output folder), iteration:", tstart
+ !      call readfield_restart(tstart,5)
+ !   endif
+#endif
+
 !Save initial fields (only if a fresh start)
 if (restart .eq. 0) then
    if (rank.eq.0) write(*,*) "Save initial fields"
@@ -369,7 +432,7 @@ if (restart .eq. 0) then
 endif
 
 !########################################################################################################################################
-! END STEP 3: FLOW AND PHASE FIELD INIT
+! END STEP 3: FLOW, PHASE FIELD AND PARTICLES INIT
 !########################################################################################################################################
 
 
@@ -387,6 +450,11 @@ gamma=1.d0*gumax
 !$acc data copyin(piX)
 !$acc data create(rhsu_o, rhsv_o, rhsw_o)
 !$acc data copyin(mysin, mycos)
+#if partflag == 1
+!$acc data copy(part,partbuff)
+!$acc data create(vec_p, order_p)
+!$acc data create(buffvar1,buffvar2)
+#endif
 call cpu_time(t_start)
 
 ! Start temporal loop
@@ -401,7 +469,54 @@ do t=tstart,tfin
 
    ! (uncomment for profiling)
    ! call nvtxStartRange("Phase-field")
+   #if partflag == 1
+   ! Operations:
+   ! 4.1 Perform Interpolation (consider passing to trilinear: more accurate, but way more expensive)
+   ! 4.2 Integrate with Adams-Bashforth
+   ! 4.3 Order and transfer in y
+   ! 4.4 Order and transfer in z 
+   ! 4.5 Check Leakage of Particles
 
+   call LinearInterpolation()
+
+   ! Particle Tracker Integration
+   ! Two-Step Adams-Bashfort (Euler for first step)
+   !$acc parallel loop collapse(2) default(present)
+   do j = 0, 2
+     do i = 1, nploc
+       part(i,Ixp+j)=part(i,Ixp+j)+&
+                     dt*(alpha*part(i,Iup+j)-beta*part(i,Iup1+j))
+     enddo
+   enddo
+
+   ! Transfer in y
+   call SortPartY()
+   call CountPartTransfY()
+   call SendPartUP(2)
+   call SendPartDOWN(2)
+
+ 
+   ! Transfer in z
+   call SortPartZ()
+   call CountPartTransfZ()
+   call SendPartUP(3)
+   call SendPartDOWN(3)
+   
+
+   ! Check Particles Leakage
+   call ParticlesLeakage()
+
+   ! Shift data for next step
+   !$acc parallel loop collapse(2) default(present)
+   do j = 0, 2
+      do i = 1, nploc
+        part(i,Iup1+j)=part(i,Iup+j)
+      enddo
+   enddo
+
+   write(*,*) 'rank',rank, 'nploc',nploc
+
+   #endif
    !########################################################################################################################################
    ! START STEP 4: PHASE-FIELD SOLVER (EXPLICIT)
    !########################################################################################################################################
@@ -963,11 +1078,27 @@ enddo
 call cpu_time(t_end)
 elapsed = t_end-t_start
 if (rank .eq. 0) write(*,*)  'Elapsed time (seconds):', elapsed
+#if partflag == 1
+!$acc end data
+!$acc end data
+!$acc end data
+#endif
 !$acc end data
 !$acc end data
 !$acc end data
 
+#if partflag == 1
+! Particle variables
+deallocate(part)
+deallocate(partbuff)
+deallocate(vec_p)
+deallocate(order_p)
+deallocate(buffvar1)
+deallocate(buffvar2)
+#endif
+
 ! Remove allocated variables (add new)
+deallocate(x_ext)
 deallocate(u,v,w)
 deallocate(tanh_psi, mysin, mycos)
 deallocate(rhsu,rhsv,rhsw)

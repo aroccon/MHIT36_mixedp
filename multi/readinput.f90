@@ -6,6 +6,7 @@ use velocity
 use phase
 use param
 use mpivar
+use particles
 implicit none
 
 open(unit=55,file='input.inp',form='formatted',status='old')
@@ -29,7 +30,10 @@ read(55,*) k0
 read(55,*) radius
 read(55,*) sigma
 read(55,*) epsr   
-
+! particle parameters
+read(55,*) npart
+read(55,*) inpart
+ 
 
 ! compute pre-defined constant 
 twopi=8.0_8*atan(1.0_8)

@@ -9,6 +9,13 @@ module param
     double precision :: f1,f2,f3,k0 ! forcing parameters
     double precision :: radius, sigma, epsr, eps, pos, val, epsi, enum ! phase-field parameters
     double precision :: times,timef
+    ! other variables (wavenumber, grid location)
+    real(8), allocatable :: x(:), kx(:)
+    real(8), allocatable :: x_ext(:)
+    double precision :: yinf, ysup ! Inf and Sup of y in PiX (no halo)
+    double precision :: zinf, zsup ! Inf and Sup of z in PiX (no halo)
+    double precision :: lyloc, lzloc ! Inf and Sup of y in PiX
+  
 end module param
 
 
@@ -16,6 +23,7 @@ module mpivar
    ! MPI variables
    integer :: rank, ranks, ierr
    integer :: localRank, localComm
+   integer :: nidp1y, nidm1y, nidp1z, nidm1z
 end module mpivar
 
 
@@ -36,6 +44,7 @@ module cudecompvar
    integer(8) :: nElemX, nElemY, nElemZ, nElemWork, nElemWork_halo,nElemWork_halo_d2z
    integer(8) :: nElemX_d2z, nElemY_d2z, nElemZ_d2z, nElemWork_d2z
    logical :: halo_periods(3)
+   integer :: pix_yoff,pix_zoff
 end module cudecompvar
 
 
