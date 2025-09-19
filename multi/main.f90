@@ -53,10 +53,9 @@ integer :: offsets(3), xoff, yoff
 integer :: np(3)
 
 ! Enable or disable phase field (acceleration eneabled by default)
-#define phiflag 1
-
-! Enable or disable particle Lagrangian tracking
-#define partflag 1
+#define phiflag 0
+! Enable or disable particle Lagrangian tracking (tracers)
+#define partflag 0
 
 !########################################################################################################################################
 ! 1. INITIALIZATION OF MPI AND cuDECOMP AUTOTUNING : START
@@ -151,7 +150,6 @@ CHECK_CUDECOMP_EXIT(cudecompGridDescCreate(handle, grid_desc, config, options))
 ! This function returns a pencil struct (piX, piY or piZ) that contains the shape, global lower and upper index bounds (lo and hi), 
 ! size of the pencil, and an order array to indicate the memory layout that will be used (to handle permuted, axis-contiguous layouts).
 ! Additionally, there is a halo_extents data member that indicates the depth of halos for the pencil, by axis.
-! Side note:  ! cudecompGetPencilInfo(handle, grid_desc, pinfo_x, 1, [1, 1, 1]) <- in this way the x-pencil also have halo elements
 ! If no halo regions are necessary, a NULL pointer can be provided in place of this array (or omitted)
 ! Pencil info in x-configuration present in PiX (shape,lo,hi,halo_extents,size)
 CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_desc, piX, 1, halo))
@@ -179,12 +177,11 @@ nElemZ_d2z = piZ_d2z%size
 CHECK_CUDECOMP_EXIT(cudecompGetTransposeWorkspaceSize(handle, grid_descD2Z, nElemWork_d2z))
 CHECK_CUDECOMP_EXIT(cudecompGetHaloWorkspaceSize(handle, grid_descD2Z, 1, halo, nElemWork_halo_d2z))
 
-! Get the global rank of neighboring processes in PiX config
+! Get the global rank of neighboring processes in PiX config (required only for particles)
 CHECK_CUDECOMP_EXIT(cudecompGetShiftedRank(handle, grid_desc, 1, 2, 1  , .true. , nidp1y))
 CHECK_CUDECOMP_EXIT(cudecompGetShiftedRank(handle, grid_desc, 1, 2, -1 , .true. , nidm1y))
 CHECK_CUDECOMP_EXIT(cudecompGetShiftedRank(handle, grid_desc, 1, 3, 1  , .true. , nidp1z))
 CHECK_CUDECOMP_EXIT(cudecompGetShiftedRank(handle, grid_desc, 1, 3, -1 , .true. , nidm1z))
-
 
 
 ! CUFFT initialization -- Create Plans
@@ -292,10 +289,6 @@ allocate(div(piX%shape(1),piX%shape(2),piX%shape(3)))
    allocate(normx(piX%shape(1),piX%shape(2),piX%shape(3)),normy(piX%shape(1),piX%shape(2),piX%shape(3)),normz(piX%shape(1),piX%shape(2),piX%shape(3)))
    allocate(fxst(piX%shape(1),piX%shape(2),piX%shape(3)),fyst(piX%shape(1),piX%shape(2),piX%shape(3)),fzst(piX%shape(1),piX%shape(2),piX%shape(3))) ! surface tension forces
 #endif
-
-
-
-
 
 ! allocate arrays for transpositions and halo exchanges 
 CHECK_CUDECOMP_EXIT(cudecompMalloc(handle, grid_desc, work_d, nElemWork))
@@ -467,60 +460,62 @@ do t=tstart,tfin
     if (rank.eq.0) write(*,*) "Time step",t,"of",tfin
     call cpu_time(times)
 
-   ! (uncomment for profiling)
-   ! call nvtxStartRange("Phase-field")
+
+   !########################################################################################################################################
+   ! START STEP 4: PARTICLES (TRACERS)
+   !########################################################################################################################################
    #if partflag == 1
-   ! Operations:
-   ! 4.1 Perform Interpolation (consider passing to trilinear: more accurate, but way more expensive)
-   ! 4.2 Integrate with Adams-Bashforth
-   ! 4.3 Order and transfer in y
-   ! 4.4 Order and transfer in z 
-   ! 4.5 Check Leakage of Particles
+      ! Operations:
+      ! 4.1 Perform Interpolation (consider passing to trilinear: more accurate, but way more expensive)
+      ! 4.2 Integrate with Adams-Bashforth
+      ! 4.3 Order and transfer in y
+      ! 4.4 Order and transfer in z 
+      ! 4.5 Check Leakage of Particles
 
-   call LinearInterpolation()
-
-   ! Particle Tracker Integration
-   ! Two-Step Adams-Bashfort (Euler for first step)
-   !$acc parallel loop collapse(2) default(present)
-   do j = 0, 2
-     do i = 1, nploc
-       part(i,Ixp+j)=part(i,Ixp+j)+&
+      call LinearInterpolation()
+      ! Particle Tracker Integration
+      ! Two-Step Adams-Bashfort (Euler for first step)
+      !$acc parallel loop collapse(2) default(present)
+      do j = 0, 2
+         do i = 1, nploc
+            part(i,Ixp+j)=part(i,Ixp+j)+&
                      dt*(alpha*part(i,Iup+j)-beta*part(i,Iup1+j))
-     enddo
-   enddo
-
-   ! Transfer in y
-   call SortPartY()
-   call CountPartTransfY()
-   call SendPartUP(2)
-   call SendPartDOWN(2)
-
- 
-   ! Transfer in z
-   call SortPartZ()
-   call CountPartTransfZ()
-   call SendPartUP(3)
-   call SendPartDOWN(3)
-   
-
-   ! Check Particles Leakage
-   call ParticlesLeakage()
-
-   ! Shift data for next step
-   !$acc parallel loop collapse(2) default(present)
-   do j = 0, 2
-      do i = 1, nploc
-        part(i,Iup1+j)=part(i,Iup+j)
+         enddo
       enddo
-   enddo
 
-   write(*,*) 'rank',rank, 'nploc',nploc
+      ! Transfer in y
+      call SortPartY()
+      call CountPartTransfY()
+      call SendPartUP(2)
+      call SendPartDOWN(2)
+ 
+      ! Transfer in z
+      call SortPartZ()
+      call CountPartTransfZ()
+      call SendPartUP(3)
+      call SendPartDOWN(3)
 
+      ! Check Particles esacping the domain (leakage)
+      call ParticlesLeakage()
+      ! Shift data for next step
+      !$acc parallel loop collapse(2) default(present)
+      do j = 0, 2
+         do i = 1, nploc
+            part(i,Iup1+j)=part(i,Iup+j)
+         enddo
+      enddo
+      write(*,*) 'rank',rank, 'nploc',nploc
    #endif
    !########################################################################################################################################
-   ! START STEP 4: PHASE-FIELD SOLVER (EXPLICIT)
+   ! END STEP 4: PARTICLES
    !########################################################################################################################################
 
+   
+   ! (uncomment for profiling)
+   ! call nvtxStartRange("Phase-field")
+   !########################################################################################################################################
+   ! START STEP 5: PHASE-FIELD SOLVER (EXPLICIT)
+   !########################################################################################################################################
    #if phiflag == 1
       !$acc kernels
       do k=1, piX%shape(3)
@@ -643,22 +638,20 @@ do t=tstart,tfin
    ! call nvtxEndRange
 
    !########################################################################################################################################
-   ! END STEP 4: PHASE-FIELD SOLVER 
+   ! END STEP 5: PHASE-FIELD SOLVER 
    !########################################################################################################################################
 
 
    !########################################################################################################################################
-   ! START STEP 5: USTAR COMPUTATION (PROJECTION STEP)
+   ! START STEP 6: USTAR COMPUTATION (PROJECTION STEP)
    !########################################################################################################################################
-   ! 5.1 compute rhs 
-   ! 5.2 obtain ustar and store old rhs in rhs_o
-   ! 5.3 Call halo exchnages along Y and Z for u,v,w
+   ! 6.1 compute rhs 
+   ! 6.2 obtain ustar and store old rhs in rhs_o
+   ! 6.3 Call halo exchnages along Y and Z for u,v,w
 
    ! (uncomment for profiling)
    ! call nvtxStartRange("Projection")
-
-   ! Projection step, convective terms
-   ! 5.1a Convective terms NS
+   ! 6.1a Convective and diffusiver terms NS
    ! Loop on inner nodes
    !$acc parallel loop tile(16,4,2) 
    do k=1+halo_ext, piX%shape(3)-halo_ext
@@ -783,10 +776,8 @@ do t=tstart,tfin
          enddo
       enddo
       !$acc end kernels
-
    #else
-
-      ! 5.2 find u, v and w star (explicit Eulero), only in the inner nodes 
+      ! 6.2 find u, v and w star only in the inner nodes 
       !$acc kernels
       do k=1+halo_ext, piX%shape(3)-halo_ext
          do j=1+halo_ext, piX%shape(2)-halo_ext
@@ -801,9 +792,7 @@ do t=tstart,tfin
          enddo
       enddo
       !$acc end kernels
-
    #endif
-
 
    ! store rhs* in rhs*_o 
    ! First step is done with Euler explicit and then move to AB2 
@@ -823,29 +812,22 @@ do t=tstart,tfin
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, w, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, w, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
    !$acc end host_data 
-
    ! (uncomment for profiling)
    ! call nvtxEndRange
-
    !########################################################################################################################################
-   ! END STEP 5: USTAR COMPUTATION 
+   ! END STEP 6: USTAR COMPUTATION 
    !########################################################################################################################################
 
 
    
    !########################################################################################################################################
-   ! START STEP 6: POISSON SOLVER FOR PRESSURE
+   ! START STEP 7: POISSON SOLVER FOR PRESSURE
    !########################################################################################################################################
    ! initialize rhs and analytical solution
-   ! 6.1 Compute rhs of Poisson equation div*ustar: divergence at the cell center 
-   ! I've done the halo updates so to compute the divergence at the pencil border i have the *star from the halo
-
+   ! 7.1 Compute rhs of Poisson equation div*ustar: divergence at the cell center 
    ! (uncomment for profiling)
    ! call nvtxStartRange("Poisson")
-
-   ! (uncomment for profiling)
    ! call nvtxStartRange("compute RHS")
-
    !$acc kernels
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
@@ -861,13 +843,9 @@ do t=tstart,tfin
       enddo
    enddo
    !$acc end kernels
-
    ! (uncomment for profiling)
    ! call nvtxEndRange
-
-   ! (uncomment for profiling)
    ! call nvtxStartRange("FFT forward w/ transpositions")
-
    !$acc host_data use_device(rhsp)
    status = cufftExecD2Z(planXf, rhsp, psi_d)
    if (status /= CUFFT_SUCCESS) write(*,*) 'X forward error: ', status
@@ -885,27 +863,20 @@ do t=tstart,tfin
    if (status /= CUFFT_SUCCESS) write(*,*) 'Z forward error: ', status
    ! END of FFT3D forward
 
-   ! (uncomment for profiling)
    ! call nvtxEndRange
-
    np(piZ_d2z%order(1)) = piZ_d2z%shape(1)
    np(piZ_d2z%order(2)) = piZ_d2z%shape(2)
    np(piZ_d2z%order(3)) = piZ_d2z%shape(3)
    call c_f_pointer(c_devloc(psi_d), phi3d, piZ_d2z%shape)
-
    ! divide by -K**2, and normalize
    offsets(piZ_d2z%order(1)) = piZ_d2z%lo(1) - 1
    offsets(piZ_d2z%order(2)) = piZ_d2z%lo(2) - 1
    offsets(piZ_d2z%order(3)) = piZ_d2z%lo(3) - 1
-
    xoff = offsets(1)
    yoff = offsets(2)
    npx = np(1)
    npy = np(2)
-
-   ! (uncomment for profiling)
    ! call nvtxStartRange("Solution")
-
    !$acc kernels
    do jl = 1, npy
       jg = yoff + jl
@@ -920,11 +891,7 @@ do t=tstart,tfin
    ! specify mean (corrects division by zero wavenumber above)
    if (xoff == 0 .and. yoff == 0) phi3d(1,1,1) = 0.0
    !$acc end kernels
-
-   ! (uncomment for profiling)
    ! call nvtxEndRange
-   
-   ! (uncomment for profiling)
    ! call nvtxStartRange("FFT backwards w/ transpositions")
 
    ! psi(kz,kx,ky) -> psi(z,kx,ky)
@@ -942,8 +909,6 @@ do t=tstart,tfin
    status = cufftExecZ2D(planXb, psi_d, p)
    if (status /= CUFFT_SUCCESS) write(*,*) 'X inverse error: ', status
    !$acc end host_data
-      
-   ! (uncomment for profiling)
    ! call nvtxEndRange
 
    !$acc host_data use_device(p)
@@ -952,10 +917,7 @@ do t=tstart,tfin
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, p, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, p, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
    !$acc end host_data 
-
-   ! (uncomment for profiling)
    ! call nvtxEndRange
-
    !########################################################################################################################################
    ! END STEP 7: POISSON SOLVER FOR PRESSURE
    !########################################################################################################################################
@@ -969,10 +931,7 @@ do t=tstart,tfin
    ! 8.2 Remove mean velocity if using ABC forcing
    ! 8.3 Call halo exchnages along Y and Z for u,v,w
    ! Correct velocity, pressure has also the halo
-   ! Correction + removal of mean velocity altogether for performance
-
-   ! (uncomment for profiling)
-   ! call nvtxStartRange("Correction")
+x  ! call nvtxStartRange("Correction")
 
    !$acc kernels 
    umean=0.d0
