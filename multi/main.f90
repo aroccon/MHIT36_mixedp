@@ -931,7 +931,7 @@ do t=tstart,tfin
    ! 8.2 Remove mean velocity if using ABC forcing
    ! 8.3 Call halo exchnages along Y and Z for u,v,w
    ! Correct velocity, pressure has also the halo
-x  ! call nvtxStartRange("Correction")
+   ! call nvtxStartRange("Correction")
 
    !$acc kernels 
    umean=0.d0
