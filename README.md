@@ -4,6 +4,8 @@ Multi-GPU code for intreface-resolved simulations of multiphase turbulence.
 The code relies on direct numerical simulation of Navier-Stokes equations coupled with a phase-field method (ACDI) for interface description.
 Tracking of Lagrangian particles (tracers) is also supported.
 The code parallerelization relies on the cuDecomp library.
+This a spin-off branch of the main code where the Poisson solver works in FP32.
+This makes the code more energy-efficient and decrease the communication overhead.
 
 
 ~~~text
