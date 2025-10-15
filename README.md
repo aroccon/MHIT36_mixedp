@@ -33,7 +33,7 @@ If you use this code, please cite the following work:
 ![Test](val/render2.jpg)
 
 
-## Reference performance and scaling
+## Reference performance and scaling (Poisson FP64)
 Performance (NS only)
 * 128 x 128 x 128    |   1 x A100@Leonardo  |   1 ms/timestep
 * 256 x 256 x 256    |   1 x A100@Leonardo  |   8 ms/timestep
@@ -41,8 +41,19 @@ Performance (NS only)
 * 128 x 128 x 128    |   4 x A100@Leonardo  |   1 ms/timestep
 * 256 x 256 x 256    |   4 x A100@Leonardo  |   3 ms/timestep
 * 512 x 512 x 512    |   4 x A100@Leonardo  |  18 ms/timestep 
-* 512 x 512 x 512    |   4 x H100@MN5-ACC   |  14 ms/timestep 
 * 1024 x 1024 x 1024 |   4 x A100@Leonardo  | 150 ms/timestep 
 * 2048 x 2048 x 2048 |  64 x A100@Leonardo  | 330 ms/timestep
 * 4096 x 4096 x 4096 | 256 x A100@Leonardo  | 780 ms/timestep
+
+* ## Reference performance and scaling (Poisson FP32)
+Performance (NS only)
+* 128 x 128 x 128    |   1 x A100@Leonardo  |     ms/timestep
+* 256 x 256 x 256    |   1 x A100@Leonardo  |     ms/timestep
+* 512 x 512 x 512    |   1 x A100@Leonardo  |     ms/timestep 
+* 128 x 128 x 128    |   4 x A100@Leonardo  | 0.7 ms/timestep
+* 256 x 256 x 256    |   4 x A100@Leonardo  | 2.2 ms/timestep
+* 512 x 512 x 512    |   4 x A100@Leonardo  |  14 ms/timestep 
+* 1024 x 1024 x 1024 |   4 x A100@Leonardo  | 111 ms/timestep 
+* 2048 x 2048 x 2048 |  64 x A100@Leonardo  |     ms/timestep
+* 4096 x 4096 x 4096 | 256 x A100@Leonardo  |     ms/timestep
 
