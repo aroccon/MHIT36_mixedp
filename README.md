@@ -45,7 +45,7 @@ Performance (NS only)
 * 2048 x 2048 x 2048 |  64 x A100@Leonardo  | 330 ms/timestep
 * 4096 x 4096 x 4096 | 256 x A100@Leonardo  | 780 ms/timestep
 
-* ## Reference performance and scaling (Poisson FP32)
+## Reference performance and scaling (Poisson FP32)
 Performance (NS only)
 * 128 x 128 x 128    |   1 x A100@Leonardo  |     ms/timestep
 * 256 x 256 x 256    |   1 x A100@Leonardo  |     ms/timestep
