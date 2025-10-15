@@ -7,11 +7,11 @@ RM	= /bin/rm -f
 CUDECOMP_DIR = /home/milton/MHIT36/cuDecomp/build/
 
 # Compiler and Linker Flags
-FFLAGS = -fast -acc -gpu=managed -Minfo=accel -Mfree -Mpreprocess -cpp -Minfo=accel -cuda  -I$(CUDECOMP_DIR)/include
+FFLAGS = -fast -acc -gpu=mem:managed -Minfo=accel -Mfree -Mpreprocess -cpp -Minfo=accel -cuda  -I$(CUDECOMP_DIR)/include
 LIBS = -L$(CUDECOMP_DIR)/lib -L/usr/local/cuda/lib64 -lcudecomp_fort -lcudecomp -cudalib=cufft -lcuda -lnvToolsExt
 
 # Source and Object Files
-OBJS = module.f90 main.f90 readinput.f90 readwrite.f90
+OBJS = module.f90 particles.f90 main.f90 readinput.f90 readwrite.f90
 EXEC = mhit36
 
 $(EXEC):	$(OBJS)
