@@ -1,5 +1,5 @@
 module param
-    integer, parameter :: nx=512
+    integer, parameter :: nx=256
     integer :: ny=nx,nz=nx
     double precision :: pi,lx,dx,dxi,ddxi,rhoi,twopi
     integer :: restart,tstart,tfin,dump
@@ -54,7 +54,7 @@ module velocity
    double precision, allocatable :: rhsu_o(:,:,:), rhsv_o(:,:,:), rhsw_o(:,:,:)
    complex(8), allocatable :: rhsp_complex(:,:,:)
    double precision, allocatable :: rhsp(:,:,:), p(:,:,:)
-   double precision, allocatable :: rhspp(:,:,:), pp(:,:,:)
+   real(4), allocatable :: rhspp(:,:,:), pp(:,:,:)
    double precision, allocatable :: div(:,:,:)
    double precision :: uc, vc, wc, umax, gumax=1.0d0, cou, alpha, beta
    double precision :: h11, h12, h13, h21, h22, h23, h31, h32, h33

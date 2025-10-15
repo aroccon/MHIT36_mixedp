@@ -32,21 +32,20 @@ integer, parameter :: Mx = 1, My = 2, Mz = 1
 !endDEBUG
 real(8), device, allocatable :: kx_d(:)
 ! working arrays
-complex(8), allocatable :: psi(:)
-real(8), allocatable :: ua(:,:,:)
-real(8), allocatable :: uaa(:,:,:)
-
-real(8), allocatable :: psi_real(:)
-! real(8), device, allocatable :: psi_real_d(:)
-complex(8), device, allocatable :: psi_d(:)
-complex(8), pointer, device, contiguous :: work_d(:), work_halo_d(:), work_d_d2z(:), work_halo_d_d2z(:)
+complex(4), allocatable :: psi(:)
+real(4), allocatable :: ua(:,:,:)
+real(4), allocatable :: uaa(:,:,:)
+real(4), allocatable :: psi_real(:)
+complex(4), device, allocatable :: psi_d(:)
+complex(8), pointer, device, contiguous :: work_d(:), work_halo_d(:)
+complex(4), pointer, device, contiguous :: work_d_d2z(:)
 character(len=40) :: namefile
 character(len=4) :: itcount
 ! Code variables
 
 real(8)::err,maxErr
 
-complex(8), device, pointer :: phi3d(:,:,:)
+complex(4), device, pointer :: phi3d(:,:,:)
 real(8) :: k2
 !integer :: il, jl, ig, jg
 integer :: offsets(3), xoff, yoff
@@ -106,7 +105,7 @@ config%gdims = gdims
 
 ! Set up autotuning options for spectral grid (transpose related settings)
 CHECK_CUDECOMP_EXIT(cudecompGridDescAutotuneOptionsSetDefaults(options))
-options%dtype = CUDECOMP_DOUBLE_COMPLEX
+options%dtype = CUDECOMP_FLOAT_COMPLEX
 if (comm_backend == 0) then
    options%autotune_transpose_backend = .true.
    options%autotune_halo_backend = .false.
@@ -187,22 +186,22 @@ CHECK_CUDECOMP_EXIT(cudecompGetShiftedRank(handle, grid_desc, 1, 3, -1 , .true. 
 ! CUFFT initialization -- Create Plans
 ! Forward 1D FFT in X: D2Z
 batchSize = piX_d2z%shape(2)*piX_d2z%shape(3) !<- number of FFT (from x-pencil dimension)
-status = cufftPlan1D(planXf, nx, CUFFT_D2Z, batchSize)
+status = cufftPlan1D(planXf, nx, CUFFT_R2C, batchSize)
 if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating X plan Forward'
 
 ! Backward 1D FFT in X: Z2D
 batchSize = piX_d2z%shape(2)*piX_d2z%shape(3) !<- number of FFT (from x-pencil dimension)
-status = cufftPlan1D(planXb, nx, CUFFT_Z2D, batchSize)
+status = cufftPlan1D(planXb, nx, CUFFT_C2R, batchSize)
 if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating X plan Backward'
 
 ! it's always 2 and 3 because y-pencil have coordinates y,z,x
 batchSize = piY_d2z%shape(2)*piY_d2z%shape(3)
-status = cufftPlan1D(planY, ny, CUFFT_Z2Z, batchSize)
+status = cufftPlan1D(planY, ny, CUFFT_C2C, batchSize)
 if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating Y plan Forward & Backward'
 
 ! it's always 2 and 3 because y-pencil have coordinates z,y,x
 batchSize = piZ_d2z%shape(2)*piZ_d2z%shape(3)
-status = cufftPlan1D(planZ, nz, CUFFT_Z2Z, batchSize)
+status = cufftPlan1D(planZ, nz, CUFFT_C2C, batchSize)
 if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating Z plan Forward & Backward'
 
 
@@ -281,6 +280,9 @@ allocate(u(piX%shape(1),piX%shape(2),piX%shape(3)),v(piX%shape(1),piX%shape(2),p
 allocate(rhsu(piX%shape(1),piX%shape(2),piX%shape(3)),rhsv(piX%shape(1),piX%shape(2),piX%shape(3)),rhsw(piX%shape(1),piX%shape(2),piX%shape(3))) ! right hand side u,v,w
 allocate(rhsu_o(piX%shape(1),piX%shape(2),piX%shape(3)),rhsv_o(piX%shape(1),piX%shape(2),piX%shape(3)),rhsw_o(piX%shape(1),piX%shape(2),piX%shape(3))) ! right hand side u,v,w
 allocate(div(piX%shape(1),piX%shape(2),piX%shape(3)))
+allocate(rhspp(piX%shape(1),piX%shape(2),piX%shape(3))) ! right hand side pressure in FP32
+allocate(pp(piX%shape(1),piX%shape(2),piX%shape(3)))     ! pressure in FP32
+
 !PFM variables
 #if phiflag == 1
    allocate(phi(piX%shape(1),piX%shape(2),piX%shape(3)),rhsphi(piX%shape(1),piX%shape(2),piX%shape(3)),rhsphi_o(piX%shape(1),piX%shape(2),piX%shape(3)))
@@ -295,7 +297,7 @@ CHECK_CUDECOMP_EXIT(cudecompMalloc(handle, grid_desc, work_d, nElemWork))
 CHECK_CUDECOMP_EXIT(cudecompMalloc(handle, grid_desc, work_halo_d, nElemWork_halo))
 ! allocate arrays for transpositions
 CHECK_CUDECOMP_EXIT(cudecompMalloc(handle, grid_descD2Z, work_d_d2z, nElemWork_d2z))
-CHECK_CUDECOMP_EXIT(cudecompMalloc(handle, grid_descD2Z, work_halo_d_d2z, nElemWork_halo_d2z))
+!CHECK_CUDECOMP_EXIT(cudecompMalloc(handle, grid_descD2Z, work_halo_d_d2z, nElemWork_halo_d2z))
 
 #if partflag == 1
 ! Particle variables
@@ -839,27 +841,28 @@ do t=tstart,tfin
                rhsp(i,j,k) =               (rho*dxi/dt)*(u(ip,j,k)-u(i,j,k))
                rhsp(i,j,k) = rhsp(i,j,k) + (rho*dxi/dt)*(v(i,jp,k)-v(i,j,k))
                rhsp(i,j,k) = rhsp(i,j,k) + (rho*dxi/dt)*(w(i,j,kp)-w(i,j,k))
+               rhspp(i,j,k)=real(rhsp(i,j,k),kind=4)
          enddo
       enddo
    enddo
    !$acc end kernels
-   ! (uncomment for profiling)
    ! call nvtxEndRange
+
    ! call nvtxStartRange("FFT forward w/ transpositions")
    !$acc host_data use_device(rhsp)
-   status = cufftExecD2Z(planXf, rhsp, psi_d)
+   status = cufftExecR2C(planXf, rhspp, psi_d)
    if (status /= CUFFT_SUCCESS) write(*,*) 'X forward error: ', status
    !$acc end host_data
 
    ! psi(kx,y,z) -> psi(y,z,kx)
-   CHECK_CUDECOMP_EXIT(cudecompTransposeXToY(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX,piX_d2z%halo_extents, [0,0,0]))
+   CHECK_CUDECOMP_EXIT(cudecompTransposeXToY(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_FLOAT_COMPLEX,piX_d2z%halo_extents, [0,0,0]))
    ! psi(y,z,kx) -> psi(ky,z,kx)
-   status = cufftExecZ2Z(planY, psi_d, psi_d, CUFFT_FORWARD)
+   status = cufftExecC2C(planY, psi_d, psi_d, CUFFT_FORWARD)
    if (status /= CUFFT_SUCCESS) write(*,*) 'Y forward error: ', status
    ! psi(ky,z,kx) -> psi(z,kx,ky)
-   CHECK_CUDECOMP_EXIT(cudecompTransposeYToZ(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX)) 
+   CHECK_CUDECOMP_EXIT(cudecompTransposeYToZ(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_FLOAT_COMPLEX)) 
    ! psi(z,kx,ky) -> psi(kz,kx,ky)
-   status = cufftExecZ2Z(planZ, psi_d, psi_d, CUFFT_FORWARD)
+   status = cufftExecC2C(planZ, psi_d, psi_d, CUFFT_FORWARD)
    if (status /= CUFFT_SUCCESS) write(*,*) 'Z forward error: ', status
    ! END of FFT3D forward
 
@@ -895,34 +898,37 @@ do t=tstart,tfin
    ! call nvtxStartRange("FFT backwards w/ transpositions")
 
    ! psi(kz,kx,ky) -> psi(z,kx,ky)
-   status = cufftExecZ2Z(planZ, psi_d, psi_d, CUFFT_INVERSE)
+   status = cufftExecC2C(planZ, psi_d, psi_d, CUFFT_INVERSE)
    if (status /= CUFFT_SUCCESS) write(*,*) 'Z inverse error: ', status
    ! psi(z,kx,ky) -> psi(ky,z,kx)
-   CHECK_CUDECOMP_EXIT(cudecompTransposeZToY(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX))
+   CHECK_CUDECOMP_EXIT(cudecompTransposeZToY(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_FLOAT_COMPLEX))
    ! psi(ky,z,kx) -> psi(y,z,kx)
-   status = cufftExecZ2Z(planY, psi_d, psi_d, CUFFT_INVERSE)
+   status = cufftExecC2C(planY, psi_d, psi_d, CUFFT_INVERSE)
    if (status /= CUFFT_SUCCESS) write(*,*) 'Y inverse error: ', status
    ! psi(y,z,kx) -> psi(kx,y,z)
-   CHECK_CUDECOMP_EXIT(cudecompTransposeYToX(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX,[0,0,0], piX_d2z%halo_extents))
+   CHECK_CUDECOMP_EXIT(cudecompTransposeYToX(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_FLOAT_COMPLEX,[0,0,0], piX_d2z%halo_extents))
    !$acc host_data use_device(p)
    ! psi(kx,y,z) -> psi(x,y,z)
-   status = cufftExecZ2D(planXb, psi_d, p)
+   status = cufftExecC2R(planXb, psi_d, pp)
    if (status /= CUFFT_SUCCESS) write(*,*) 'X inverse error: ', status
    !$acc end host_data
    ! call nvtxEndRange
 
+
    !$acc host_data use_device(p)
    ! update halo nodes with pressure (needed for the pressure correction step), using device variable no need to use host-data
    ! Update X-pencil halos in Y and Z direction
-   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, p, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
-   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, p, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
+   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, pp, work_halo_d, CUDECOMP_FLOAT, piX%halo_extents, halo_periods, 2))
+   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, pp, work_halo_d, CUDECOMP_FLOAT, piX%halo_extents, halo_periods, 3))
    !$acc end host_data 
    ! call nvtxEndRange
    !########################################################################################################################################
    ! END STEP 7: POISSON SOLVER FOR PRESSURE
    !########################################################################################################################################
 
+ 
 
+   ! (uncomment for profiling
 
    !########################################################################################################################################
    ! START STEP 8: VELOCITY CORRECTION
@@ -944,9 +950,9 @@ do t=tstart,tfin
             jm=j-1
             km=k-1
             if (im < 1) im=nx
-            u(i,j,k)=u(i,j,k) - dt/rho*(p(i,j,k)-p(im,j,k))*dxi
-            v(i,j,k)=v(i,j,k) - dt/rho*(p(i,j,k)-p(i,jm,k))*dxi
-            w(i,j,k)=w(i,j,k) - dt/rho*(p(i,j,k)-p(i,j,km))*dxi
+            u(i,j,k)=u(i,j,k) - dt/rho*(real(p(i,j,k),kind=8)-real(p(im,j,k),kind=8))*dxi
+            v(i,j,k)=v(i,j,k) - dt/rho*(real(p(i,j,k),kind=8)-real(p(i,jm,k),kind=8))*dxi
+            w(i,j,k)=w(i,j,k) - dt/rho*(real(p(i,j,k),kind=8)-real(p(i,j,km),kind=8))*dxi
             umean=umean + u(i,j,k)
             vmean=vmean + v(i,j,k)
             wmean=wmean + w(i,j,k)
